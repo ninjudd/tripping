@@ -170,5 +170,16 @@ bot.on("message:text", (ctx) => {
   state.session.send(ctx.message.text + "\n");
 });
 
+bot.api.setMyCommands([
+  { command: "new", description: "Start a new session" },
+  { command: "enter", description: "Attach to existing session" },
+  { command: "return", description: "Switch back to previous session" },
+  { command: "ls", description: "List sessions" },
+  { command: "screen", description: "Screenshot current session" },
+  { command: "ctrl", description: "Send control key (e.g. /ctrl c)" },
+  { command: "kill", description: "Kill a session" },
+  { command: "close", description: "End current session" },
+]);
+
 bot.start();
 console.log("Tripping bot started.");

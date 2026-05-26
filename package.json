@@ -4,14 +4,14 @@
   "description": "Chat frontends for trip sessions",
   "type": "module",
   "scripts": {
-    "telegram": "tsx src/telegram/index.ts"
+    "telegram": "node --env-file=.env --import=tsx src/telegram/index.ts"
   },
   "dependencies": {
     "grammy": "^1.31.0"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.7.0",
-    "@types/node": "^22.0.0"
+    "typescript": "^5.7.0"
   }
 }

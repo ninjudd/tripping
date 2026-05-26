@@ -1,5 +1,5 @@
 import { Bot } from "grammy";
-import { TripSession, TripEvent } from "../trip.js";
+import { TripSession, TripEvent, tripLs, tripKill } from "../trip.js";
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 if (!token) {
@@ -9,63 +9,127 @@ if (!token) {
 
 const bot = new Bot(token);
 
-const sessions = new Map<number, TripSession>();
+interface ChatState {
+  session: TripSession;
+  stack: string[];
+}
 
-bot.command("start", (ctx) => {
-  ctx.reply(
-    "Send /open <command> to start a session.\nExample: /open claude\n\nMessages are sent as input. Use /screen for a screenshot, /ctrl <key> for control keys, /close to end."
-  );
-});
+const chats = new Map<number, ChatState>();
 
-bot.command("open", (ctx) => {
-  const chatId = ctx.chat.id;
+function reply(chatId: number, text: string) {
+  bot.api.sendMessage(chatId, text).catch(() => {});
+}
 
-  if (sessions.has(chatId)) {
-    ctx.reply("Session already open. /close first.");
-    return;
+function replyCode(chatId: number, text: string) {
+  const display = text.length > 4000 ? text.slice(-4000) : text;
+  bot.api
+    .sendMessage(chatId, `\`\`\`\n${display}\n\`\`\``, {
+      parse_mode: "Markdown",
+    })
+    .catch(() => {});
+}
+
+function attachSession(chatId: number, name: string, command?: string[]) {
+  const old = chats.get(chatId);
+  if (old) {
+    old.session.close();
   }
 
-  const args = ctx.match.trim();
-  const command = args ? args.split(/\s+/) : ["/bin/sh"];
-  const name = `telegram-${chatId}`;
-
   const session = new TripSession(name, command);
-  sessions.set(chatId, session);
+  const state: ChatState = {
+    session,
+    stack: old ? [...old.stack, old.session.name] : [],
+  };
+  chats.set(chatId, state);
 
   session.on("log", (event: TripEvent) => {
     if (event.text) {
-      // Telegram has a 4096 char limit
-      const text = event.text.length > 4000 ? event.text.slice(-4000) : event.text;
-      ctx.reply(`\`\`\`\n${text}\n\`\`\``, { parse_mode: "Markdown" });
+      replyCode(chatId, event.text);
     }
   });
 
   session.on("exit", (event: TripEvent) => {
-    ctx.reply(`Session exited (code ${event.code ?? "?"})`);
-    sessions.delete(chatId);
+    reply(chatId, `Session exited (code ${event.code ?? "?"})`);
+    chats.delete(chatId);
   });
 
   session.on("close", () => {
-    sessions.delete(chatId);
+    chats.delete(chatId);
   });
 
-  ctx.reply(`Session started: ${command.join(" ")}`);
+  return session;
+}
+
+bot.command("start", (ctx) => {
+  ctx.reply(
+    [
+      "Commands:",
+      "/new [command] — start a new session",
+      "/enter <name> — attach to existing session",
+      "/return — switch back to previous session",
+      "/ls — list sessions",
+      "/screen — screenshot current session",
+      "/ctrl <key> — send control key",
+      "/kill <name> — kill a session",
+      "/close — end current session",
+      "",
+      "Messages are sent as terminal input.",
+    ].join("\n")
+  );
+});
+
+bot.command("new", (ctx) => {
+  const args = ctx.match.trim();
+  const command = args ? args.split(/\s+/) : undefined;
+  const name = `telegram-${ctx.chat.id}`;
+  attachSession(ctx.chat.id, name, command);
+  ctx.reply(`Session started: ${command?.join(" ") ?? "$SHELL"}`);
+});
+
+bot.command("enter", (ctx) => {
+  const name = ctx.match.trim();
+  if (!name) {
+    ctx.reply("Usage: /enter <session-name>");
+    return;
+  }
+  attachSession(ctx.chat.id, name);
+  ctx.reply(`Attached to ${name}`);
+});
+
+bot.command("return", (ctx) => {
+  const state = chats.get(ctx.chat.id);
+  if (!state || state.stack.length === 0) {
+    ctx.reply("No session to return to.");
+    return;
+  }
+  const prev = state.stack.pop()!;
+  state.session.close();
+  attachSession(ctx.chat.id, prev);
+  ctx.reply(`Returned to ${prev}`);
+});
+
+bot.command("ls", async (ctx) => {
+  const output = await tripLs(true);
+  if (output) {
+    replyCode(ctx.chat.id, output);
+  } else {
+    ctx.reply("No sessions.");
+  }
 });
 
 bot.command("screen", async (ctx) => {
-  const session = sessions.get(ctx.chat.id);
-  if (!session) {
-    ctx.reply("No active session. /open <command>");
+  const state = chats.get(ctx.chat.id);
+  if (!state) {
+    ctx.reply("No active session. /new or /enter <name>");
     return;
   }
-  const text = await session.screenshot();
-  const display = text.length > 4000 ? text.slice(-4000) : text;
-  ctx.reply(`\`\`\`\n${display}\n\`\`\``, { parse_mode: "Markdown" });
+  const text = await state.session.screenshot();
+  replyCode(ctx.chat.id, text);
 });
 
 bot.command("ctrl", (ctx) => {
-  const session = sessions.get(ctx.chat.id);
-  if (!session) {
+  const state = chats.get(ctx.chat.id);
+  if (!state) {
     ctx.reply("No active session.");
     return;
   }
@@ -74,27 +138,36 @@ bot.command("ctrl", (ctx) => {
     ctx.reply("Usage: /ctrl c, /ctrl d, /ctrl z");
     return;
   }
-  session.key(`ctrl-${key}`);
+  state.session.key(`ctrl-${key}`);
+});
+
+bot.command("kill", async (ctx) => {
+  const name = ctx.match.trim();
+  if (!name) {
+    ctx.reply("Usage: /kill <session-name>");
+    return;
+  }
+  const result = await tripKill(name);
+  ctx.reply(result || `Killed ${name}`);
 });
 
 bot.command("close", (ctx) => {
-  const session = sessions.get(ctx.chat.id);
-  if (!session) {
+  const state = chats.get(ctx.chat.id);
+  if (!state) {
     ctx.reply("No active session.");
     return;
   }
-  session.close();
-  sessions.delete(ctx.chat.id);
+  state.session.close();
+  chats.delete(ctx.chat.id);
   ctx.reply("Session closed.");
 });
 
-// Regular messages become input
 bot.on("message:text", (ctx) => {
-  const session = sessions.get(ctx.chat.id);
-  if (!session) {
+  const state = chats.get(ctx.chat.id);
+  if (!state) {
     return;
   }
-  session.send(ctx.message.text + "\n");
+  state.session.send(ctx.message.text + "\n");
 });
 
 bot.start();

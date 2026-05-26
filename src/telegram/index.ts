@@ -127,7 +127,7 @@ bot.command("screen", async (ctx) => {
   replyCode(ctx.chat.id, text);
 });
 
-bot.command("ctrl", (ctx) => {
+bot.command("key", (ctx) => {
   const state = chats.get(ctx.chat.id);
   if (!state) {
     ctx.reply("No active session.");
@@ -135,10 +135,10 @@ bot.command("ctrl", (ctx) => {
   }
   const key = ctx.match.trim().toLowerCase();
   if (!key) {
-    ctx.reply("Usage: /ctrl c, /ctrl d, /ctrl z");
+    ctx.reply("Usage: /key enter, /key escape, /key tab, /key up, /key ctrl-c");
     return;
   }
-  state.session.key(`ctrl-${key}`);
+  state.session.key(key);
 });
 
 bot.command("kill", async (ctx) => {
@@ -176,7 +176,7 @@ bot.api.setMyCommands([
   { command: "return", description: "Switch back to previous session" },
   { command: "ls", description: "List sessions" },
   { command: "screen", description: "Screenshot current session" },
-  { command: "ctrl", description: "Send control key (e.g. /ctrl c)" },
+  { command: "key", description: "Send key (enter, escape, tab, ctrl-c)" },
   { command: "kill", description: "Kill a session" },
   { command: "close", description: "End current session" },
 ]);

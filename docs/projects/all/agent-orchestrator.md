@@ -492,15 +492,14 @@ smarts-in-the-coordinator, safe-primitives-in-the-CLI grain.
 ## 15. Task custody and re-delivery
 
 Re-delivery is not a reversal of the archive claim; it is a fourth message
-state. §5 has the layout: a task is claimed inbox → working by `message
-read`, closed working → archive by `message send --kind result --thread T`
-after the result is delivered, re-delivered working → inbox by a respawn,
-and parked in `dead/` past the re-delivery cap. Deliver-then-close ordering
-means a crash between the two leaves a done-looking task in `working/` with
-its result durable — the sweep below dedups it; the reverse order could
-close a task whose result was never sent. Non-task messages archive on
-read, deliberately at-most-once: an answer read by a dead incarnation is
-gone, and the fresh one
+state. §5 has the layout: a task is claimed inbox → working by `message read`,
+closed working → archive by `message send --kind result --thread T` after the
+result is delivered, re-delivered working → inbox by a respawn, and parked in
+`dead/` past the re-delivery cap. Deliver-then-close ordering means a crash
+between the two leaves a done-looking task in `working/` with its result
+durable — the sweep below dedups it; the reverse order could close a task whose
+result was never sent. Non-task messages archive on read, deliberately
+at-most-once: an answer read by a dead incarnation is gone, and the fresh one
 re-asks. If `--thread` is missing and exactly one task is in `working/`, the
 send closes it with a printed warning; if several are, it closes nothing and
 prints the listing so the agent self-corrects.
@@ -632,15 +631,15 @@ accepted at this scale.
 coordinator itself gets a session. It runs `team init` when `team.json` is
 missing, writes the coordinator's roster row (the id `--coordinator` chose at
 init, default `coordinator`; excluded from the cap, §16), creates the trip
-session `<team>-<coordinator-id>` — the `<team>-<id>` rule of §7 holds for
-the coordinator too, so every roster-derived lookup (§6, §15, §16) finds it;
-only the *address* is pinned, through §4's alias — with `TRIPPING_TEAM` and
-`TRIPPING_AGENT` set
-and §9's autonomy tier applied (`--engine`, `--yolo`), and then attaches the
-calling terminal — one command drops the human into their team. `--detach`
-skips the attach for scripting. Re-running `start` on a live team just
-attaches, so it is also the way back in; on a dead coordinator session it
-recreates and attaches, the same rerun-to-recover path as §15's sequence.
+session `<team>-<coordinator-id>` — the `<team>-<id>` rule of §7 holds for the
+coordinator too, so every roster-derived lookup (§6, §15, §16) finds it; only
+the *address* is pinned, through §4's alias — with `TRIPPING_TEAM` and
+`TRIPPING_AGENT` set and §9's autonomy tier applied (`--engine`, `--yolo`), and
+then attaches the calling terminal — one command drops the human into their
+team. `--detach` skips the attach for scripting. Re-running `start` on a live
+team just attaches, so it is also the way back in; on a dead coordinator
+session it recreates and attaches, the same rerun-to-recover path as §15's
+sequence.
 
 The coordinator's role prompt differs from a teammate's: it names the team
 verbs and §16's limits, and the dispatch/join loop instead of the

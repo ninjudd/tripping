@@ -97,8 +97,9 @@ the fix if it becomes one.
 
 Session names become directory names under `~/.trip/sessions/` (`common.rs:16`),
 so keep `.` and `/` out of any name tripping generates — `trip new` and
-`trip wrap` append `.1`, `.2` to auto-number derived names
-(`client/mod.rs:108-120`). `trip create` does not: a name that already exists
+`trip wrap` append `.1`, `.2` to whatever base they are given, explicit or
+derived (`client/mod.rs:188-195`; `wrap.rs:181-188` reuses a bare name only
+when it already exists and no command was given). `trip create` does not: a name that already exists
 is a hard error (`daemon/mod.rs:204-213`). An exited session is reaped only
 once no client is attached (`daemon/mod.rs:165-167`), so re-creating a name
 after a crash may need an explicit `trip kill` first.

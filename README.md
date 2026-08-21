@@ -1,5 +1,7 @@
 # tripping
 
+*Ping your trip sessions.*
+
 Chat frontends for [trip](https://github.com/ninjudd/trip) sessions.
 
 Text your terminal from Telegram, Discord, or anywhere.

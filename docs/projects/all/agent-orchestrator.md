@@ -282,30 +282,47 @@ When a message lands in agent X's inbox, look at X's status from §6:
 - **starting** (§6) — do nothing. A respawned teammate's first action is
   `tripping mail read`, so the restart path needs no doorbell at all.
 
+Every injection into a live session passes one guard first: `trip screen`,
+checked for the engine's permission-prompt signature. §9's default tier can
+park a teammate at a confirmation prompt, a prompt produces no event, and
+injected text would answer it — so a parked teammate is never rung. Instead
+it is flagged by `tripping team ls` (an annotation on top of §6's status,
+from the same check, not a new derived state) and the coordinator gets a
+`kind: note` from `tripping` naming the session, so a human can
+`trip attach` and answer. This is the plan's one deliberate screen-scrape:
+never for status, which stays log-derived (§6), only as the safety interlock
+before typing into a terminal sight unseen.
+
 One nudge exists outside delivery: a teammate idle with a non-empty
 `working/` gets a reminder doorbell naming the task it still holds — never a
-reclaim (§15).
-
-The hazard is an agent that looks idle because it is parked at a permission
-prompt: injected text answers the prompt instead. §9 is the real fix.
+reclaim (§15). The nudge passes the same guard.
 
 ## 9. Permissions posture
 
-Teammates run unattended, so they must never block on a human permission
-prompt — an agent parked at one looks idle to §6, and a doorbell rung at it
-answers the prompt. Every engine launch therefore carries one of two autonomy
-tiers; there is no interactive tier, and the tier is chosen at spawn
+Teammates run unattended, so a human permission prompt is this posture's
+enemy: an agent parked at one emits no events, looks idle to §6, and a
+doorbell rung at it would answer the prompt. Every engine launch carries one
+of two autonomy tiers — there is no interactive tier — chosen at spawn
 (`--yolo`, §4):
 
-- **auto — the default.** Claude launches with `--permission-mode auto`:
-  autonomous, a classifier reviewing each action and denying rather than
-  prompting, so a refusal is a failed tool call the agent works around, never
-  a parked prompt. Codex launches with `--approve-for-me`: approval requests
-  routed through automatic review, inside the `workspace-write` sandbox —
-  writes bounded to the workspace, network off by default.
+- **auto — the default.** Claude launches with `--permission-mode auto`: a
+  classifier reviews each action and allows it, denies it, or asks. A denial
+  returns as a failed tool call with work-around guidance and the teammate
+  keeps going; an ask, in an unattended PTY, is a parked confirmation
+  prompt — the tier's one hazard, made survivable by §8's guard. Codex
+  launches with `--approve-for-me`: approval requests routed through
+  automatic review, inside the `workspace-write` sandbox — writes bounded to
+  the workspace, network off by default, and no path to a human prompt.
 - **yolo — explicit opt-in.** Claude `--permission-mode bypassPermissions`,
   Codex `--dangerously-bypass-approvals-and-sandbox`. No review and no
   sandbox, on either engine.
+
+auto is chosen over `dontAsk` — the mode that turns every would-be ask into
+a deny and so can never park — because the classifier is strictly more
+permissive about useful work, and a parked prompt caught by the guard is
+survivable where a too-eager deny is invisible friction. The cost is named
+here and paid in §8: a prompt produces no event, so no log-derived status
+can see one, and the only safe detector is the screen itself.
 
 Even on the auto tier the engines differ, and the difference is worth
 stating: Codex's sandbox is a real write boundary; Claude's classifier gates

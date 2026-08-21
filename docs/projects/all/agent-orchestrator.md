@@ -162,8 +162,13 @@ depends on it, so §7 checks for it explicitly.
    `cwd` set to the worktree and `env` carrying `TRIPPING_TEAM` and
    `TRIPPING_AGENT`. The prompt goes in argv. Never type it in afterwards —
    that races the TUI's startup.
-4. Check that `~/.trip/sessions/<team>-<id>/agent.json` appeared, meaning
-   `trip on` fired. If it did not, fail the spawn loudly.
+4. Check that `~/.trip/sessions/<team>-<id>/agent.json` appeared **and that
+   its `kind` matches the engine**. `trip on`'s hook path hardcodes `codex`
+   (see [`trip-primitives.md`](../../trip-primitives.md)), so a Claude teammate
+   registered through a `SessionStart` hook passes an existence check while
+   staying invisible to §6. Repair the `kind` in place when it is wrong — the
+   `log_path` beside it is correct — and fail the spawn loudly when the file
+   is missing.
 
 The role prompt ends with the loop:
 

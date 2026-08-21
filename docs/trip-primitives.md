@@ -41,13 +41,29 @@ status file to go stale.
 
 ## Registering an agent
 
-Agent events only appear after `trip on` runs inside the session. It reads
-`TRIP_SESSION`, locates the agent's log from `CLAUDE_CODE_SESSION_ID` or
-`CODEX_THREAD_ID`, and writes `~/.trip/sessions/<name>/agent.json`.
+Agent events only appear after `trip on` runs inside the session. It resolves
+the agent's kind and log path in this order, then writes
+`~/.trip/sessions/<name>/agent.json`:
 
-Most setups run it from a `SessionStart` hook. Everything tripping derives about
-an agent's state depends on it, so treat a missing `agent.json` as a spawn
-failure rather than a degraded mode.
+1. JSON on stdin carrying `transcript_path` — how a `SessionStart` hook calls
+   it (`client/mod.rs:624`, `client/mod.rs:657-672`).
+2. `CLAUDE_CODE_SESSION_ID` in the environment.
+3. `CODEX_THREAD_ID` in the environment.
+
+**The hook path hardcodes the kind to `codex`** (at trip `6955ad1`). Claude
+Code's `SessionStart` hook passes exactly that JSON — and the hook is the setup
+trip's own README recommends — so a Claude agent registered through it gets an
+`agent.json` claiming `codex` against a Claude transcript. The codex parser
+keys on `session_meta` / `event_msg` / `response_item` (`daemon/agent.rs`),
+none of which a Claude transcript contains, so zero agent events follow, while
+`agent.json` exists and an existence check passes. The durable fix belongs in
+trip; until it lands, anything spawning Claude agents must verify that the
+`kind` in `agent.json` matches the engine and repair it when it does not. The
+`log_path` the hook discovered is correct either way.
+
+Everything tripping derives about an agent's state depends on registration, so
+treat a missing `agent.json` as a spawn failure rather than a degraded mode —
+and a wrong `kind` as the same failure wearing a healthier look.
 
 ## Two source facts the design rests on
 

@@ -87,12 +87,18 @@ Two verb semantics are load-bearing. `read` claims a `kind: task` message by
 moving it to `working/` and archives every other kind (§15) — the surface
 stays at four verbs, and a teammate never learns more than `read`'s output
 shows. `wait` returns immediately when the inbox is already non-empty, so a
-respawned teammate with queued messages unblocks itself (§14).
+respawned teammate with queued messages unblocks itself (§14). `read` and
+`peek` print the full envelope — `from`, `kind`, `thread`, `subject`, body —
+so the sender is always visible, and because `from` comes from the
+environment rather than a flag, it cannot be forged through the CLI.
 
-`tripping team` is what the coordinator uses; teammates may not spawn or kill
+`tripping team` is the management group. `ls` and `watch` are open to every
+agent — `team ls` is how teammates discover each other — while `start`,
+`spawn`, `respawn`, `requeue`, and `kill` are coordinator-or-human verbs
 (§16):
 
 ```
+tripping team start <name> [--engine claude|codex] [--yolo] [--detach]
 tripping team init <name> [--max-agents N] [--max-respawns N] [--coordinator id]
 tripping team spawn <id> --role "..." [--engine claude|codex] [--worktree] [--yolo]
 tripping team respawn <id> [--reason "..."] [--force]
@@ -110,7 +116,8 @@ Every command that launches an engine carries an autonomy tier (§9): the
 default is auto, and `--yolo` opts into the bypass tier. `spawn` can refuse —
 on the caller, the population cap, or a missing or corrupt `team.json` — and
 every refusal names its recovery command (§16). `respawn` recycles an
-identity (§14); `requeue` revives a parked task (§15).
+identity (§14); `requeue` revives a parked task (§15); `start` launches the
+coordinator itself (§17).
 
 A CLI rather than an MCP server, for now: one implementation serves both
 engines, you can drive it by hand from any shell to debug a stuck team, and
@@ -262,11 +269,21 @@ check it and `git log` after any restart — `archive/` is your history,
 order, so `ls` and `cat` suffice; after any compaction or restart, re-read
 them and run `git status` before resuming referenced work. Plus: commit
 meaningful checkpoints as you go, and a task arriving with a restart note may
-be partially done. The worktree's CLAUDE.md/AGENTS.md references PROTOCOL.md,
+be partially done. A "Your team" section: `tripping team ls` lists everyone —
+id, role, engine, and §6 status; any id is addressable with `message send`,
+teammates included; and the coordinator — your manager — is always
+addressable as `coordinator` (§4), where questions and blockers go with
+`--kind question`. The worktree's CLAUDE.md/AGENTS.md references PROTOCOL.md,
 so the contract re-enters context after every compaction. Task messages are
 written self-contained — prior work is referenced by thread id, never by
 assumed recall — which makes every result a self-summary for its sender's own
 successor (§14).
+
+Engines mix freely: `--engine` is per-teammate, trip normalizes both event
+streams into one vocabulary, and nothing downstream tells a Claude teammate
+from a Codex one apart from §6's waiting caveat and §9's flag pairs. Adding a
+teammate to a live team is the same `spawn` — the roster is not fixed at
+start, only capped (§16).
 
 Session names are `<team>-<id>`. Keep `.` and `/` out of team and agent ids —
 session names become directory names, and `trip new`/`trip wrap` apply `.N`
@@ -402,9 +419,9 @@ observability, never enforcement.
    peek / wait`. Fully testable with no agents running, which is the point of
    doing it first. Pins the two §4 semantics: `read` claims tasks into
    `working/`, and `wait` returns immediately on a non-empty inbox.
-2. **Spawn and observe.** Worktrees, `tripping team spawn` with §16's checks
-   in `spawn.ts`, the protocol doc, status derivation, `tripping team ls` and
-   `watch`.
+2. **Spawn and observe.** Worktrees, `tripping team start` and `spawn` with
+   §16's checks in `spawn.ts`, the protocol doc, status derivation,
+   `tripping team ls` and `watch`.
 3. **Watcher.** Inbox watching, doorbell delivery, death detection, and the
    respawn sequence and reconcile sweep §15 spells out — the sweep also runs
    inside `dispatch --wait`'s poll loop, so fan-in fails fast on a dead
@@ -603,3 +620,23 @@ exist, and `bus.jsonl` makes any population change explainable after the
 fact. And cap enforcement is check-then-write, so a human and the coordinator
 spawning simultaneously can overshoot by one — bounded, visible in `team ls`,
 accepted at this scale.
+
+## 17. Starting a team
+
+`tripping team start <name>` is the front door, and the answer to how the
+coordinator itself gets a session. It runs `team init` when `team.json` is
+missing, writes the coordinator's roster row (the id `--coordinator` chose at
+init, default `coordinator`; excluded from the cap, §16), creates the trip
+session `<team>-coordinator` with `TRIPPING_TEAM` and `TRIPPING_AGENT` set
+and §9's autonomy tier applied (`--engine`, `--yolo`), and then attaches the
+calling terminal — one command drops the human into their team. `--detach`
+skips the attach for scripting. Re-running `start` on a live team just
+attaches, so it is also the way back in; on a dead coordinator session it
+recreates and attaches, the same rerun-to-recover path as §15's sequence.
+
+The coordinator's role prompt differs from a teammate's: it names the team
+verbs and §16's limits, and the dispatch/join loop instead of the
+finish-task/result/wait loop — but the same PROTOCOL.md contract governs its
+own mailbox. It is a real trip session like any other — `trip attach`,
+`trip screen`, and `trip log` all apply — and a human taking the wheel of the
+coordinator is the expected way to steer the team.

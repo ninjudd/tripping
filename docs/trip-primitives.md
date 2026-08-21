@@ -86,7 +86,12 @@ agent TUIs render at that size, and the PTY resizes when a human attaches, so
 this is a papercut rather than a blocker. Adding `--size` to `trip create` is
 the fix if it becomes one.
 
-Session names become directory names under `~/.trip/sessions/`, and trip appends
-`.1`, `.2` to auto-number. Keep `.` and `/` out of any name tripping generates.
+Session names become directory names under `~/.trip/sessions/` (`common.rs:16`),
+so keep `.` and `/` out of any name tripping generates — `trip new` and
+`trip wrap` append `.1`, `.2` to auto-number derived names
+(`client/mod.rs:108-120`). `trip create` does not: a name that already exists
+is a hard error (`daemon/mod.rs:204-213`). An exited session is reaped only
+once no client is attached (`daemon/mod.rs:165-167`), so re-creating a name
+after a crash may need an explicit `trip kill` first.
 
 `trip send` appends Enter unless you pass `--raw`.

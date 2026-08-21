@@ -177,7 +177,10 @@ The role prompt ends with the loop:
 > message. Never end a turn without calling `tripping mail wait`.
 
 Session names are `<team>-<id>`. Keep `.` and `/` out of team and agent ids —
-trip uses `.N` to auto-number and session names become directory names.
+session names become directory names, and `trip new`/`trip wrap` use `.N`
+auto-numbering on derived names. `trip create` itself errors on a name that
+already exists, and an exited session's name frees only once no client is
+attached — so a respawn of `<team>-<id>` runs `trip kill` first.
 
 ## 8. Doorbell policy
 
@@ -260,7 +263,9 @@ share the repository directory.
    doing it first.
 2. **Spawn and observe.** Worktrees, `tripping team spawn`, the protocol doc,
    status derivation, `tripping team ls` and `watch`.
-3. **Watcher.** Inbox watching, doorbell delivery, restart-on-crash, timeouts.
+3. **Watcher.** Inbox watching, doorbell delivery, restart-on-crash — which
+   `trip kill`s the dead session first, since `trip create` errors on a held
+   name — and timeouts.
 4. **Proof.** A coordinator spawns two teammates, dispatches tasks, collects
    results, and integrates the branches.
 

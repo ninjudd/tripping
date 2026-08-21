@@ -10,12 +10,14 @@ Wanted, not scheduled.
 - **Re-aim the chat frontends at the team.** `src/telegram/` and `src/discord/`
   already put a human in front of a `trip` session from anywhere. Pointed at a
   team they become the remote window on it: the roster and status, a tail of any
-  teammate, mail sent as the human, and a push the moment a result lands in the
+  teammate, messages sent as the human, and a push the moment a result lands
+in the
   coordinator's inbox. Held until the bus protocol settles, so the frontends are
   written once.
 - **`agent-sdk` as a headless teammate backend.** Roles that never need a
   terminal could run through [agent-sdk](https://github.com/ninjudd/agent-sdk)
-  instead of a PTY, behind the same mail interface. Cheaper per teammate, at the
+  instead of a PTY, behind the same message interface. Cheaper per teammate, at
+the
   cost of the thing that makes this design worth having — see
   [`agent-orchestrator.md`](all/agent-orchestrator.md) §11.
 - **Teach trip's codex parser `custom_tool_call`.** Codex records shell

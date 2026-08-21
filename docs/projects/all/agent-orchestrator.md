@@ -191,15 +191,25 @@ prompt: injected text answers the prompt instead. §9 is the real fix.
 
 ## 9. Permissions posture
 
-Teammates run unattended, so they must never see a permission prompt: Claude
-with `--permission-mode bypassPermissions`, Codex with
-`--sandbox workspace-write --ask-for-approval never`.
+Teammates run unattended, so they must never see a permission prompt — an
+agent parked at one looks idle to §6, and a doorbell rung at it answers the
+prompt. The two engines get there from opposite directions, and the difference
+is the point of this section:
 
-This is a deliberate trade, not an oversight. The worktree bounds what a
-teammate can write; it bounds nothing about network access or anything outside
-the repository. Do not point a team at work involving untrusted input or
-credentials you would not hand a single unattended agent — the isolation story
-here is "one repository per teammate", and that is all it is.
+- **Codex is sandboxed with approvals off.** `--sandbox workspace-write
+  --ask-for-approval never` bounds writes to the workspace and disables
+  network access by default. The worktree is a real boundary here.
+- **Claude is unsandboxed.** `--permission-mode bypassPermissions` skips the
+  permission system and applies no filesystem sandbox — Claude's own help
+  recommends the equivalent only for sandboxes without internet access. A
+  Claude teammate can write anywhere the operator can and reach the network
+  freely. Its worktree is merge hygiene (§11), not a boundary.
+
+This is a deliberate trade, not an oversight. Do not point a team at work
+involving untrusted input or credentials you would not hand a single
+unattended agent. "One repository per teammate" is an isolation story only for
+Codex teammates; for Claude teammates there is no isolation story at all, and
+pretending the worktree is one would be worse than saying so.
 
 ## 10. Module layout
 

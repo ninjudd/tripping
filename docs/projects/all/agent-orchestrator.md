@@ -15,8 +15,7 @@ an SDK cannot offer that.
 
 The substrate this needs already exists. [`trip-primitives.md`](../../trip-primitives.md)
 records what trip gives us and the source facts the design depends on;
-nothing in trip has to change to ship
-this.
+nothing in trip has to change to ship this.
 
 ## 1. Scope
 
@@ -214,9 +213,8 @@ trip's codex parser currently drops, so a Codex teammate blocked on
 `tripping message wait` keeps reading as working. §8 loses nothing — the
 doorbell stays quiet for working and waiting alike — but `tripping team ls`
 cannot separate a Codex teammate blocked on messages from one grinding
-through a task.
-Teaching trip's parser `custom_tool_call` closes the gap; it is the first thing
-on this plan that would want a trip change, and it is on
+through a task. Teaching trip's parser `custom_tool_call` closes the gap; it
+is the first thing on this plan that would want a trip change, and it is on
 [`later.md`](../later.md).
 
 The last row is a spawn failure, not a degraded mode. Everything else here
@@ -236,8 +234,15 @@ death is what triggers §15's respawn, not an idle reading.
    the auto flag — `restarts_since_human` is under `max_respawns` (§16).
 1. For a role that writes: `git worktree add wt/<id> -b team/<team>/<id>`.
    Roles that only read share the repository working directory.
-2. Write `wt/<id>/.tripping/PROTOCOL.md` — the messaging contract, identical for
-   both engines.
+2. The messaging contract — identical for every engine and role — is written
+   once, to `~/.tripping/teams/<team>/PROTOCOL.md`, at `team init`. Writer
+   roles get a copy at `wt/<id>/.tripping/PROTOCOL.md`, which the worktree's
+   CLAUDE.md/AGENTS.md references so the contract re-enters context after
+   every compaction. Roles without a worktree — read-only teammates, and the
+   coordinator (§17) — get the canonical path in their role prompt instead,
+   and `spawn` and `start` print a one-line reference the human may add to
+   their repository's own AGENTS.md: tripping never writes into the user's
+   checkout.
 3. `trip create <team>-<id> -- <engine> "<role prompt>"`, spawned from Node with
    `cwd` set to the worktree and `env` carrying `TRIPPING_TEAM` and
    `TRIPPING_AGENT`. The prompt goes in argv. Never type it in afterwards —
@@ -472,7 +477,7 @@ a teammate self-reports a bad compaction (`message send coordinator --kind
 control`). The boundary for a deliberate respawn is the result message for the
 last dispatched task having arrived, matched by thread — not derived status,
 which cannot confirm idleness for a Codex teammate (§6). Incarnations share the
-mailbox, so messages landing during the respawn window simply waits in
+mailbox, so messages landing during the respawn window simply wait in
 `inbox/`. When no inherited context is wanted at all, kill and spawn a new id
 instead.
 
@@ -487,15 +492,15 @@ smarts-in-the-coordinator, safe-primitives-in-the-CLI grain.
 ## 15. Task custody and re-delivery
 
 Re-delivery is not a reversal of the archive claim; it is a fourth message
-state. §5 has the layout: a task is claimed inbox → working by
-`message read`, closed working → archive by
-`message send --kind result --thread T` after the result is delivered,
-re-delivered working → inbox by a respawn, and parked in `dead/` past the
-re-delivery cap. Deliver-then-close ordering means a crash
-between the two leaves a done-looking task in `working/` with its result
-durable — the sweep below dedups it; the reverse order could close a task
-whose result was never sent. Non-task messages archive on read, deliberately
-at-most-once: an answer read by a dead incarnation is gone, and the fresh one
+state. §5 has the layout: a task is claimed inbox → working by `message
+read`, closed working → archive by `message send --kind result --thread T`
+after the result is delivered, re-delivered working → inbox by a respawn,
+and parked in `dead/` past the re-delivery cap. Deliver-then-close ordering
+means a crash between the two leaves a done-looking task in `working/` with
+its result durable — the sweep below dedups it; the reverse order could
+close a task whose result was never sent. Non-task messages archive on
+read, deliberately at-most-once: an answer read by a dead incarnation is
+gone, and the fresh one
 re-asks. If `--thread` is missing and exactly one task is in `working/`, the
 send closes it with a printed warning; if several are, it closes nothing and
 prints the listing so the agent self-corrects.
@@ -627,7 +632,10 @@ accepted at this scale.
 coordinator itself gets a session. It runs `team init` when `team.json` is
 missing, writes the coordinator's roster row (the id `--coordinator` chose at
 init, default `coordinator`; excluded from the cap, §16), creates the trip
-session `<team>-coordinator` with `TRIPPING_TEAM` and `TRIPPING_AGENT` set
+session `<team>-<coordinator-id>` — the `<team>-<id>` rule of §7 holds for
+the coordinator too, so every roster-derived lookup (§6, §15, §16) finds it;
+only the *address* is pinned, through §4's alias — with `TRIPPING_TEAM` and
+`TRIPPING_AGENT` set
 and §9's autonomy tier applied (`--engine`, `--yolo`), and then attaches the
 calling terminal — one command drops the human into their team. `--detach`
 skips the attach for scripting. Re-running `start` on a live team just
@@ -636,7 +644,12 @@ recreates and attaches, the same rerun-to-recover path as §15's sequence.
 
 The coordinator's role prompt differs from a teammate's: it names the team
 verbs and §16's limits, and the dispatch/join loop instead of the
-finish-task/result/wait loop — but the same PROTOCOL.md contract governs its
-own mailbox. It is a real trip session like any other — `trip attach`,
+finish-task/result/wait loop — but the same contract governs its own mailbox,
+by the canonical path (§7 step 2), since it has no worktree to carry a copy.
+Its working directory is wherever `start` ran — normally the repository
+root — and tripping writes nothing into that checkout: `start` prints the
+one-line AGENTS.md reference for the human to adopt, which matters most for
+the coordinator, the longest-lived agent on the team and the one most
+certain to compact. It is a real trip session like any other — `trip attach`,
 `trip screen`, and `trip log` all apply — and a human taking the wheel of the
 coordinator is the expected way to steer the team.

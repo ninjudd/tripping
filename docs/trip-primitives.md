@@ -68,9 +68,10 @@ and a wrong `kind` as the same failure wearing a healthier look.
 ## Two source facts the design rests on
 
 **Spawned sessions get the caller's environment.** `Session::spawn` builds the
-child's environment from only the map in the request (`session.rs:96`) — it does
-not inherit the daemon's. `trip create` passes `terminal_env()`, which is the
-client process's full environment (`client/mod.rs:13`). So a session created by
+child's environment from only the map in the request (`session.rs:83-89`) and
+hands it to `execve` (`session.rs:138`), which replaces the environment outright
+rather than inheriting the daemon's. `trip create` passes `terminal_env()`,
+which is the client process's full environment (`client/mod.rs:13`). So a session created by
 tripping inherits `PATH`, `HOME`, and credentials, and tripping can pass
 `TRIPPING_TEAM` and `TRIPPING_AGENT` by setting them on its own spawn.
 

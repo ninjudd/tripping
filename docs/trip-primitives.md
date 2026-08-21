@@ -39,6 +39,14 @@ Events land in `~/.trip/sessions/<name>/log.jsonl`. Read the tail of that file
 to derive an agent's status; you do not need a running watcher, and there is no
 status file to go stale.
 
+One thing the events cannot tell you is liveness. `agent_session_end` is
+emitted only when the tailer exits because `agent.json` was removed or
+replaced (`daemon/agent.rs:277-287`) — a CLI that is killed or crashes never
+logs one, and the tailer keeps polling the dead transcript. Whether a session
+is alive comes from the daemon's session list, which marks a session Exited on
+SIGCHLD and reaps it once no client is attached (`daemon/mod.rs:165-167`);
+never infer death from the log tail or from silence.
+
 ## Registering an agent
 
 Agent events only appear after `trip on` runs inside the session. It resolves
@@ -63,10 +71,15 @@ removing `agent.json` and writing it back corrected, never by editing it in
 place. The daemon's tailer captures the config once (`daemon/agent.rs:237`)
 and its per-tick re-read compares only `log_path` (`agent.rs:249-253`), so an
 in-place `kind` edit changes nothing it watches. Removal makes the tailer
-exit, the watcher re-enters within its 2s tick (`daemon/session.rs:187-194`)
-with a fresh read, and because the new tailer starts at offset 0
-(`agent.rs:244`) the transcript is re-parsed from the top — the events the
-wrong parser dropped are recovered rather than lost. The `log_path` the hook
+exit — but only once it *observes* the removal: it re-checks every 300ms
+(`agent.rs:274`), and a rewrite that lands inside that window restores a file
+with the same `log_path`, so the tailer never sees `None` and never exits.
+Leave `agent.json` absent for longer than the poll before writing it back
+(or verify events start flowing and retry). Once the old tailer exits, the
+watcher re-enters within its 2s tick (`daemon/session.rs:187-194`) with a
+fresh read, and because the new tailer starts at offset 0 (`agent.rs:244`)
+the transcript is re-parsed from the top — the events the wrong parser
+dropped are recovered rather than lost. The `log_path` the hook
 discovered is correct either way.
 
 Everything tripping derives about an agent's state depends on registration, so
@@ -104,5 +117,10 @@ when it already exists and no command was given). `trip create` does not: a
 name that already exists is a hard error (`daemon/mod.rs:204-213`). An exited
 session is reaped only once no client is attached (`daemon/mod.rs:165-167`),
 so re-creating a name after a crash may need an explicit `trip kill` first.
+
+`trip kill` on a live name sends SIGHUP and removes the session from the
+daemon's map unconditionally (`daemon/mod.rs:576-592`), so the name frees
+immediately; on a missing name it errors with "session not found", which
+respawn paths tolerate.
 
 `trip send` appends Enter unless you pass `--raw`.

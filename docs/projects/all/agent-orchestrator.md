@@ -148,9 +148,14 @@ incarnation's log — and between `trip create` and the new agent's first event,
 the tail is the old incarnation's `agent_turn_end`, which the table below reads
 as idle and §8 answers by ringing a doorbell at a TUI still starting up, the
 race §7 step 3 exists to avoid. Events carry only a timestamp — no pid, no run
-id — so scope every status read to events after the current session's own start
-time. §13's restart question lands in the same place and they should be settled
-together.
+id — and no CLI surface exposes the session's creation time, so scope every
+status read to events after the last `agent_session_start`. Each tailer emits
+exactly one, so it marks the current incarnation using nothing beyond the file
+already being read, which keeps the stateless property above intact. One
+caveat, safe in its direction: a tailer restart re-parses the transcript from
+offset 0 and re-emits its `agent_session_start`, which can move the boundary
+forward — discarding old events, never admitting them. §13's restart question
+lands in the same place and they should be settled together.
 
 | Last agent event | Status |
 |---|---|

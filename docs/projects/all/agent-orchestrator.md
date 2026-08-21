@@ -289,7 +289,11 @@ injected text would answer it — so a parked teammate is never rung. Instead
 it is flagged by `tripping team ls` (an annotation on top of §6's status,
 from the same check, not a new derived state) and the coordinator gets a
 `kind: note` from `tripping` naming the session, so a human can
-`trip attach` and answer. This is the plan's one deliberate screen-scrape:
+`trip attach` and answer. The note fires once per park — a flag on the
+roster row, set with the first suppression and cleared when the screen
+check stops matching — with later suppressions audited in `bus.jsonl`
+rather than mailed, so a teammate parked across five deliveries costs the
+coordinator one note, not five. This is the plan's one deliberate screen-scrape:
 never for status, which stays log-derived (§6), only as the safety interlock
 before typing into a terminal sight unseen.
 
@@ -311,8 +315,13 @@ of two autonomy tiers — there is no interactive tier — chosen at spawn
   keeps going; an ask, in an unattended PTY, is a parked confirmation
   prompt — the tier's one hazard, made survivable by §8's guard. Codex
   launches with `--approve-for-me`: approval requests routed through
-  automatic review, inside the `workspace-write` sandbox — writes bounded to
-  the workspace, network off by default, and no path to a human prompt.
+  automatic review rather than to the operator, inside the `workspace-write`
+  sandbox — writes bounded to the workspace, network off by default. Whether
+  a review denial can ever surface as a blocking prompt in a headless turn is
+  unverified (the binary carries a human-override affordance for denied
+  actions); §8's guard is engine-agnostic either way, and Phase 2 spends one
+  live spawn confirming a denied action fails the turn rather than parking
+  it.
 - **yolo — explicit opt-in.** Claude `--permission-mode bypassPermissions`,
   Codex `--dangerously-bypass-approvals-and-sandbox`. No review and no
   sandbox, on either engine.

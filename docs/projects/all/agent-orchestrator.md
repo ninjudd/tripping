@@ -142,6 +142,16 @@ Read the tail of `~/.trip/sessions/<name>/log.jsonl` on demand. This is
 stateless: no status file to go stale when the orchestrator is not running, and
 no watcher required to answer `tripping team ls`.
 
+The log outlives the session. `log.jsonl` is opened append-only and the session
+directory is never removed, so a respawned `<team>-<id>` appends to its previous
+incarnation's log — and between `trip create` and the new agent's first event,
+the tail is the old incarnation's `agent_turn_end`, which the table below reads
+as idle and §8 answers by ringing a doorbell at a TUI still starting up, the
+race §7 step 3 exists to avoid. Events carry only a timestamp — no pid, no run
+id — so scope every status read to events after the current session's own start
+time. §13's restart question lands in the same place and they should be settled
+together.
+
 | Last agent event | Status |
 |---|---|
 | `agent_turn_end`, `agent_session_end` | idle |
@@ -278,5 +288,7 @@ share the repository directory.
 - **What happens when a teammate dies mid-task?** Phase 3 restarts it, but a
   restarted agent has no memory of the task it was holding. Re-delivering from
   `archive/` is the obvious answer and needs the claim step to be reversible.
+  This is the same boundary §6's incarnation-scoped read guards, so settle
+  both at once.
 - **Does the coordinator need a budget or agent cap?** Nothing currently stops
   it spawning until the machine gives out.

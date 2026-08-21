@@ -182,9 +182,12 @@ depends on it, so §7 checks for it explicitly.
    its `kind` matches the engine**. `trip on`'s hook path hardcodes `codex`
    (see [`trip-primitives.md`](../../trip-primitives.md)), so a Claude teammate
    registered through a `SessionStart` hook passes an existence check while
-   staying invisible to §6. Repair the `kind` in place when it is wrong — the
-   `log_path` beside it is correct — and fail the spawn loudly when the file
-   is missing.
+   staying invisible to §6. Repair a wrong `kind` by removing `agent.json` and
+   writing it back corrected — an in-place edit is the one change the daemon's
+   tailer ignores, while remove-then-write makes it restart with the fixed
+   config and re-parse the transcript from the top;
+   [`trip-primitives.md`](../../trip-primitives.md) has the mechanics — and
+   fail the spawn loudly when the file is missing.
 
 The role prompt ends with the loop:
 

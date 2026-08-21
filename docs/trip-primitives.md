@@ -58,8 +58,16 @@ keys on `session_meta` / `event_msg` / `response_item` (`daemon/agent.rs`),
 none of which a Claude transcript contains, so zero agent events follow, while
 `agent.json` exists and an existence check passes. The durable fix belongs in
 trip; until it lands, anything spawning Claude agents must verify that the
-`kind` in `agent.json` matches the engine and repair it when it does not. The
-`log_path` the hook discovered is correct either way.
+`kind` in `agent.json` matches the engine and repair it when it does not — by
+removing `agent.json` and writing it back corrected, never by editing it in
+place. The daemon's tailer captures the config once (`daemon/agent.rs:237`)
+and its per-tick re-read compares only `log_path` (`agent.rs:249-253`), so an
+in-place `kind` edit changes nothing it watches. Removal makes the tailer
+exit, the watcher re-enters within its 2s tick (`daemon/session.rs:187-194`)
+with a fresh read, and because the new tailer starts at offset 0
+(`agent.rs:244`) the transcript is re-parsed from the top — the events the
+wrong parser dropped are recovered rather than lost. The `log_path` the hook
+discovered is correct either way.
 
 Everything tripping derives about an agent's state depends on registration, so
 treat a missing `agent.json` as a spawn failure rather than a degraded mode —

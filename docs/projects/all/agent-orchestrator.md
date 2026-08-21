@@ -64,16 +64,16 @@ Nothing else goes on `PATH` for an agent to confuse with `trip` itself.
 
 Identity comes from `TRIPPING_TEAM` and `TRIPPING_AGENT` in the environment, so
 there is no `--from` flag anywhere and an agent cannot post as someone else by
-accident. One sender id, `tripping`, is reserved for the watcher's own
-bookkeeping mail (§15): it is minted only inside the library, is not reachable
-from `tripping mail send`, and `team spawn tripping` is refused.
+accident. One sender id, `tripping`, is reserved for the library's own
+bookkeeping mail (§14, §15): it is minted only inside the library, is not
+reachable from `tripping mail send`, and `team spawn tripping` is refused.
 
 `tripping mail` is what every teammate uses. It is the whole surface an LLM has
 to learn, so it stays at four verbs:
 
 ```
 tripping mail send <to> --subject S [--kind task] [--thread T]   # body on stdin
-tripping mail read                  # print unread, archive them
+tripping mail read                  # print unread; claim tasks, archive the rest
 tripping mail peek                  # print unread, leave them
 tripping mail wait [--timeout 550]  # block until mail arrives
 ```
@@ -180,7 +180,8 @@ already being read, which keeps the stateless property above intact. One
 caveat, safe in its direction: a tailer restart re-parses the transcript from
 offset 0 and re-emits its `agent_session_start`, which can move the boundary
 forward — discarding old events, never admitting them. During a respawn the
-boundary moves before the kill: §14 writes the roster's `spawned_at` first,
+boundary moves before the kill: §15's respawn sequence writes the roster's
+`spawned_at` first,
 and the scope becomes events after max(last `agent_session_start`,
 `spawned_at`) — so the whole kill-to-first-event window derives as a status
 of its own, `starting`, rather than as the dead incarnation's idle.
@@ -218,7 +219,8 @@ death is what triggers §15's respawn, not an idle reading.
 0. Fail-first checks, in `team/spawn.ts` so the CLI, `team dispatch`, and
    the watcher all inherit them: `team.json` present and parseable (else
    refuse, naming `tripping team init`), the caller is the coordinator or a
-   human shell, and the live count is under the cap (§16).
+   human shell, the live count is under the cap, and — when the caller passes
+   the auto flag — `restarts_since_human` is under `max_respawns` (§16).
 1. For a role that writes: `git worktree add wt/<id> -b team/<team>/<id>`.
    Roles that only read share the repository working directory.
 2. Write `wt/<id>/.tripping/PROTOCOL.md` — the messaging contract, identical for
@@ -233,8 +235,9 @@ death is what triggers §15's respawn, not an idle reading.
    registered through a `SessionStart` hook passes an existence check while
    staying invisible to §6. Repair a wrong `kind` by removing `agent.json` and
    writing it back corrected — an in-place edit is the one change the daemon's
-   tailer ignores, while remove-then-write makes it restart with the fixed
-   config and re-parse the transcript from the top;
+   tailer ignores, while removing it, waiting out the tailer's poll, and
+   writing it back makes it restart with the fixed config and re-parse the
+   transcript from the top;
    [`trip-primitives.md`](../../trip-primitives.md) has the mechanics — and
    fail the spawn loudly when the file is missing.
 
@@ -349,7 +352,8 @@ and a 200ms tick, that is not a real cost.
 
 **Writers get a worktree each.** Parallel agents editing one tree is the primary
 failure mode of every orchestrator of this shape. Read-only roles skip it and
-share the repository directory.
+share the repository directory. The coordinator integrates and squashes the
+teammate branches, which is also what absorbs §15's checkpoint commits.
 
 **Cost budgets are refused, not deferred.** trip's normalized events carry no
 usage fields, subscription auth has no per-session metering, and neither
@@ -373,9 +377,10 @@ observability, never enforcement.
    respawn sequence and reconcile sweep §15 spells out — the sweep also runs
    inside `dispatch --wait`'s poll loop, so fan-in fails fast on a dead
    teammate instead of hanging — plus §16's crash-loop breaker. Timeouts only
-   escalate: a live-but-wedged teammate, or one that finished but died before
-   its result send, is reported to the coordinator and the human, never
-   auto-reclaimed from a possibly-live incarnation.
+   escalate: a live-but-wedged teammate — including one that finished but
+   never sent its result — is reported to the coordinator and the human,
+   never auto-reclaimed from a possibly-live incarnation. (A *dead* teammate
+   that never sent its result is §15's ordinary re-delivery case.)
 4. **Proof.** A coordinator spawns two teammates, dispatches tasks, collects
    results, and integrates the branches.
 

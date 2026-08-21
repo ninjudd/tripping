@@ -209,9 +209,9 @@ The role prompt ends with the loop:
 Session names are `<team>-<id>`. Keep `.` and `/` out of team and agent ids —
 session names become directory names, and `trip new`/`trip wrap` apply `.N`
 auto-numbering to any base name, explicit or derived. `trip create` itself
-errors on a name that
-already exists, and an exited session's name frees only once no client is
-attached — so a respawn of `<team>-<id>` runs `trip kill` first.
+errors on a name that already exists, and an exited session's name frees only
+once no client is attached — so a respawn of `<team>-<id>` runs `trip kill`
+first.
 
 ## 8. Doorbell policy
 

@@ -18,6 +18,12 @@ Wanted, not scheduled.
   instead of a PTY, behind the same mail interface. Cheaper per teammate, at the
   cost of the thing that makes this design worth having — see
   [`agent-orchestrator.md`](all/agent-orchestrator.md) §11.
+- **Teach trip's codex parser `custom_tool_call`.** Codex records shell
+  execution as `response_item`/`custom_tool_call` named `exec`;
+  `parse_codex_line` handles only `function_call`, `function_call_output` and
+  `reasoning`, so shell calls emit no `agent_tool_call` and the waiting status
+  is underivable for Codex teammates — see
+  [`agent-orchestrator.md`](all/agent-orchestrator.md) §6.
 - **`--size` on `trip create`.** The PTY opens at a hardcoded 80x24. Both TUIs
   cope and attaching resizes it, so this waits until it actually annoys someone.
   See [`trip-primitives.md`](../trip-primitives.md).

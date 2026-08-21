@@ -156,14 +156,20 @@ together.
 |---|---|
 | `agent_turn_end`, `agent_session_end` | idle |
 | `agent_activity`, `agent_text`, `agent_tool_call` | working |
-| a shell `agent_tool_call` whose input runs `tripping mail wait`, no result yet | waiting |
+| a `Bash` `agent_tool_call` whose input runs `tripping mail wait`, no result yet | waiting — Claude only |
 | none | unknown — `trip on` never fired, or it is a plain shell |
 
-The waiting row is the one per-engine branch in an otherwise engine-agnostic
-table. The tool call's `name` field is the tool, not the command — `Bash` for
-Claude, `shell` for Codex — and the command sits inside the call's `input`,
-shaped differently for each, so the derivation inspects the input rather than
-matching the name.
+The waiting row is derivable only for Claude teammates today. The tool call's
+`name` field is the tool, not the command — `Bash`, with the command inside the
+call's `input` — so the derivation inspects the input rather than matching the
+name. Codex records shell execution as a `custom_tool_call` named `exec`, which
+trip's codex parser currently drops, so a Codex teammate blocked on
+`tripping mail wait` keeps reading as working. §8 loses nothing — the doorbell
+stays quiet for working and waiting alike — but `tripping team ls` cannot
+separate a Codex teammate blocked on mail from one grinding through a task.
+Teaching trip's parser `custom_tool_call` closes the gap; it is the first
+thing on this plan that would want a trip change, and it is on
+[`later.md`](../later.md).
 
 The last row is a spawn failure, not a degraded mode. Everything else here
 depends on it, so §7 checks for it explicitly.

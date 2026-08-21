@@ -67,6 +67,10 @@ there is no `--from` flag anywhere and an agent cannot post as someone else by
 accident. One sender id, `tripping`, is reserved for the library's own
 bookkeeping mail (§14, §15): it is minted only inside the library, is not
 reachable from `tripping mail send`, and `team spawn tripping` is refused.
+The address `coordinator` is likewise reserved — an alias, resolved through
+`team.json` to whichever id holds the role, so the literal address every
+role prompt and park mail writes to keeps working when `--coordinator` named
+someone else; `team spawn coordinator` is refused too.
 
 `tripping mail` is what every teammate uses. It is the whole surface an LLM has
 to learn, so it stays at four verbs:
@@ -181,10 +185,10 @@ caveat, safe in its direction: a tailer restart re-parses the transcript from
 offset 0 and re-emits its `agent_session_start`, which can move the boundary
 forward — discarding old events, never admitting them. During a respawn the
 boundary moves before the kill: §15's respawn sequence writes the roster's
-`spawned_at` first,
-and the scope becomes events after max(last `agent_session_start`,
-`spawned_at`) — so the whole kill-to-first-event window derives as a status
-of its own, `starting`, rather than as the dead incarnation's idle.
+`spawned_at` first, and the scope becomes events after max(last
+`agent_session_start`, `spawned_at`) — so the whole kill-to-first-event
+window derives as a status of its own, `starting`, rather than as the dead
+incarnation's idle.
 
 | Last agent event | Status |
 |---|---|
@@ -484,7 +488,10 @@ recovered by rerunning:
    wait can eat it.
 7. `trip create` exactly as §7 step 3, the role prompt prefixed with a resume
    preamble: fresh incarnation of <id>; read PROTOCOL.md, run `tripping mail
-   read`, check `git status`, then `tripping mail wait`.
+   read`, check `git status`, then `tripping mail wait`. Retry once on a
+   connection failure: killing the daemon's last session makes the daemon
+   exit, and a create in that window catches it mid-shutdown, when the old
+   process still holds the lock the new one needs.
 8. Re-run §7 step 4's agent.json verification.
 
 The reconcile sweep — watcher startup, every tick, and inside

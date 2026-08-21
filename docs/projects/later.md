@@ -27,3 +27,17 @@ Wanted, not scheduled.
 - **`--size` on `trip create`.** The PTY opens at a hardcoded 80x24. Both TUIs
   cope and attaching resizes it, so this waits until it actually annoys someone.
   See [`trip-primitives.md`](../trip-primitives.md).
+- **Teammates spawning sub-teams.** Rejected for v1 —
+  [`agent-orchestrator.md`](all/agent-orchestrator.md) §16: every mechanism
+  from the result loop to the doorbell to branch integration assumes a
+  one-level team, and the escalation path costs one message. A real sub-team
+  design needs routing, doorbell, and integration rules of its own.
+- **Transcript-parsing usage recorders.** Claude's usage fields and Codex's
+  token-count events are both dropped by trip's normalizer today. A recorder
+  would be observability only —
+  [`agent-orchestrator.md`](all/agent-orchestrator.md) §11 records why
+  enforcement is refused permanently.
+- **`trip ls --json`.** A machine-readable session list would let tripping
+  check liveness against the daemon without parsing human-formatted output;
+  until then `spawn.ts` shells out to `trip ls -a` and tolerates format
+  drift.

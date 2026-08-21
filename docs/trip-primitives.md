@@ -77,11 +77,12 @@ and a wrong `kind` as the same failure wearing a healthier look.
 
 **Spawned sessions get the caller's environment.** `Session::spawn` builds the
 child's environment from only the map in the request (`session.rs:83-89`) and
-hands it to `execve` (`session.rs:138`), which replaces the environment outright
-rather than inheriting the daemon's. `trip create` passes `terminal_env()`,
-which is the client process's full environment (`client/mod.rs:13`). So a session created by
-tripping inherits `PATH`, `HOME`, and credentials, and tripping can pass
-`TRIPPING_TEAM` and `TRIPPING_AGENT` by setting them on its own spawn.
+hands it to `execve` (`session.rs:138`), which replaces the environment
+outright rather than inheriting the daemon's. `trip create` passes
+`terminal_env()`, which is the client process's full environment
+(`client/mod.rs:13`). So a session created by tripping inherits `PATH`,
+`HOME`, and credentials, and tripping can pass `TRIPPING_TEAM` and
+`TRIPPING_AGENT` by setting them on its own spawn.
 
 **`TRIP_SESSION` is always correct inside a session.** The daemon force-sets it
 to the session name and filters any inherited value out of the map first
@@ -99,9 +100,9 @@ Session names become directory names under `~/.trip/sessions/` (`common.rs:16`),
 so keep `.` and `/` out of any name tripping generates — `trip new` and
 `trip wrap` append `.1`, `.2` to whatever base they are given, explicit or
 derived (`client/mod.rs:188-195`; `wrap.rs:181-188` reuses a bare name only
-when it already exists and no command was given). `trip create` does not: a name that already exists
-is a hard error (`daemon/mod.rs:204-213`). An exited session is reaped only
-once no client is attached (`daemon/mod.rs:165-167`), so re-creating a name
-after a crash may need an explicit `trip kill` first.
+when it already exists and no command was given). `trip create` does not: a
+name that already exists is a hard error (`daemon/mod.rs:204-213`). An exited
+session is reaped only once no client is attached (`daemon/mod.rs:165-167`),
+so re-creating a name after a crash may need an explicit `trip kill` first.
 
 `trip send` appends Enter unless you pass `--raw`.

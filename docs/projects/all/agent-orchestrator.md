@@ -156,8 +156,14 @@ together.
 |---|---|
 | `agent_turn_end`, `agent_session_end` | idle |
 | `agent_activity`, `agent_text`, `agent_tool_call` | working |
-| `agent_tool_call` naming `tripping mail wait`, no result yet | waiting |
+| a shell `agent_tool_call` whose input runs `tripping mail wait`, no result yet | waiting |
 | none | unknown — `trip on` never fired, or it is a plain shell |
+
+The waiting row is the one per-engine branch in an otherwise engine-agnostic
+table. The tool call's `name` field is the tool, not the command — `Bash` for
+Claude, `shell` for Codex — and the command sits inside the call's `input`,
+shaped differently for each, so the derivation inspects the input rather than
+matching the name.
 
 The last row is a spawn failure, not a degraded mode. Everything else here
 depends on it, so §7 checks for it explicitly.

@@ -30,6 +30,13 @@ into one vocabulary, identically for Claude Code and Codex:
 `agent_session_start`, `agent_session_end`, `agent_text`, `agent_thinking`,
 `agent_tool_call`, `agent_tool_result`, `agent_activity`, `agent_turn_end`
 
+One asymmetry to know about: Codex records shell execution as
+`custom_tool_call`, which the parser drops, so a Codex agent logs no
+`agent_tool_call` at all — 96 of them against a single `function_call` in a
+real transcript.
+[trip#3](https://github.com/ninjudd/trip/pull/3) normalizes them; until it
+lands, anything deriving state from an agent's tool calls is blind for Codex.
+
 `agent_turn_end` is the one that matters most. It is an engine-agnostic
 **liveness signal**: you can tell whether an agent is working or idle without
 parsing a TUI. Deriving that from screen scraping is normally the hardest part
@@ -58,7 +65,9 @@ the agent's kind and log path in this order, then writes
 2. `CLAUDE_CODE_SESSION_ID` in the environment.
 3. `CODEX_THREAD_ID` in the environment.
 
-**The hook path hardcodes the kind to `codex`** (at trip `6955ad1`). Claude
+**The hook path hardcodes the kind to `codex`** (at trip `6955ad1`; fixed by
+[trip#2](https://github.com/ninjudd/trip/pull/2), unmerged at the time of
+writing). Claude
 Code's `SessionStart` hook passes exactly that JSON — and the hook is the setup
 trip's own README recommends — so a Claude agent registered through it gets an
 `agent.json` claiming `codex` against a Claude transcript. The codex parser

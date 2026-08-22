@@ -12,7 +12,7 @@ import {
 } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { teamDir, validId } from "./paths.js";
+import { teamDir, validId, teamJsonPath } from "./paths.js";
 import {
   Team,
   AgentRow,
@@ -154,7 +154,12 @@ export function tripKillTolerant(session: string): void {
   try {
     tripExec(["kill", session]);
   } catch (err: unknown) {
-    if (tripErrorText(err).includes("session not found")) return;
+    // trip quotes the name: "session 'proof-w1' not found". Matching the
+    // literal "session not found" never fired against a real trip, so a
+    // respawn of an already-dead teammate failed at step 3 — which is the
+    // ordinary case the watcher hits every time a session dies. Only the
+    // stub said it unquoted, so the suite agreed with the bug.
+    if (/session (?:'[^']*' )?not found/.test(tripErrorText(err))) return;
     throw err;
   }
 }
@@ -344,7 +349,7 @@ export function checkSpawn(
     if (live >= roster.limits.max_agents && !(existing && !existing.killed_at)) {
       refuse(
         `${live}/${roster.limits.max_agents} teammates live (limits.max_agents in ` +
-          `~/.trip/teams/${team}/team.json). Free a slot: trip team kill <id>. ` +
+          `${teamJsonPath(team)}). Free a slot: trip team kill <id>. ` +
           `Raising the cap is a human edit of team.json.`
       );
     }
@@ -406,11 +411,32 @@ export async function verifyAgentRegistration(
       return;
     }
     if (Date.now() >= deadline) {
+      // Which failure this is decides what the operator should do, and the
+      // two want opposite actions — so say which, rather than describing
+      // both and leaving them to guess.
+      //
+      // A live session that has not registered is usually waiting at a
+      // prompt: both engines gate an untrusted directory, and a writer's
+      // worktree is one, so on that path this timeout is *expected* to lose
+      // a race against a human rather than merely unlucky. Killing here
+      // destroys a teammate that is about to start work, along with anything
+      // it has not committed.
+      if (sessionAlive(session)) {
+        throw new Error(
+          `${session} has not registered after ${Math.round(timeoutMs / 1000)}s, ` +
+            `but the session is alive — it is probably waiting at a prompt ` +
+            `(both engines gate an untrusted directory, and a worktree is one). ` +
+            `Answer it: trip attach ${session}. Do NOT kill it — it may register ` +
+            `and start work on its own; check with trip team ls, where a late ` +
+            `registrant reads working or waiting rather than gone?.`
+        );
+      }
       throw new Error(
-        `agent.json never appeared for ${session} — either trip on did not ` +
-          `fire, or the engine died at launch (a mistyped --model fails ` +
-          `there, not here): check trip screen ${session} first. ` +
-          `Is the SessionStart hook configured? Autopsy: trip log ${session}`
+        `agent.json never appeared for ${session} and the session is gone — ` +
+          `the engine died at launch (a mistyped --model fails there, not ` +
+          `here). Autopsy: trip log ${session}. If it is on your PATH and the ` +
+          `session lived, ask whether trip on ran: is the SessionStart hook ` +
+          `configured, or the plugin passed?`
       );
     }
     await new Promise((r) => setTimeout(r, 300));

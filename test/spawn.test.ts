@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
 import {
   mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync,
-  existsSync, chmodSync, lstatSync, appendFileSync,
+  existsSync, chmodSync, lstatSync, appendFileSync, cpSync,
 } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -13,8 +13,8 @@ import {
 } from "../src/team/spawn.js";
 import { readTeam, writeTeam, DEFAULT_LIMITS } from "../src/team/roster.js";
 import { deriveStatus } from "../src/team/status.js";
-import { protocolPath } from "../src/team/protocol.js";
-import { teamDir } from "../src/team/paths.js";
+import { protocolPath, protocolText, coordinatorPrompt, teammatePrompt } from "../src/team/protocol.js";
+import { teamDir, teamJsonPath } from "../src/team/paths.js";
 
 const TEAM = "t";
 let root: string;
@@ -42,7 +42,7 @@ case "$1" in
       grep -vx "$2" "${stubDir}/live.txt" > "${stubDir}/live.tmp" || true
       mv "${stubDir}/live.tmp" "${stubDir}/live.txt"
     else
-      echo "session not found" >&2; exit 1
+      echo "Error: session '$2' not found" >&2; exit 1
     fi
     ;;
   ls)
@@ -62,6 +62,26 @@ function markDead(session: string): void {
   }
 }
 
+
+/** A git repo costs three process spawns to create, and every test needed
+ *  one: ~290 execs across the suite. Build it once per file and copy it
+ *  in-process instead — three execs per file. Worth doing because an exec is
+ *  not free here (a machine running endpoint scanning pays per process), but
+ *  measure before blaming the suite for a slow run: it is 15s on an idle
+ *  machine and 80s on a loaded one, and load has dominated every time. */
+let repoTemplate: string;
+function makeRepoTemplate(): void {
+  repoTemplate = mkdtempSync(join(tmpdir(), "tripping-repo-template-"));
+  execFileSync("git", ["init", "-q", repoTemplate]);
+  writeFileSync(join(repoTemplate, "README.md"), "hi\n");
+  execFileSync("git", ["-C", repoTemplate, "add", "-A"]);
+  execFileSync("git", ["-C", repoTemplate, "-c", "user.email=t@t", "-c", "user.name=t",
+    "commit", "-qm", "init"]);
+}
+
+beforeAll(makeRepoTemplate);
+afterAll(() => rmSync(repoTemplate, { recursive: true, force: true }));
+
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "tripping-spawn-"));
   sessions = join(root, "sessions");
@@ -69,11 +89,7 @@ beforeEach(() => {
   repo = join(root, "repo");
   mkdirSync(sessions, { recursive: true });
   mkdirSync(stubDir, { recursive: true });
-  mkdirSync(repo, { recursive: true });
-  execFileSync("git", ["init", "-q", repo]);
-  writeFileSync(join(repo, "README.md"), "hi\n");
-  execFileSync("git", ["-C", repo, "add", "-A"]);
-  execFileSync("git", ["-C", repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"]);
+  cpSync(repoTemplate, repo, { recursive: true });
   process.env.TRIP_TEAMS_DIR = join(root, "teams");
   process.env.TRIP_SESSIONS_DIR = sessions;
   savedPath = process.env.PATH!;
@@ -89,6 +105,25 @@ afterEach(() => {
   delete process.env.TRIP_TEAMS_DIR;
   delete process.env.TRIP_SESSIONS_DIR;
   rmSync(root, { recursive: true, force: true });
+});
+
+describe("operator-facing paths come from paths.ts", () => {
+  it("never hardcodes ~/.trip/teams, so TRIP_TEAMS_DIR is honoured everywhere", () => {
+    // Found live: `trip team start` told the coordinator to read
+    // ~/.trip/teams/<team>/PROTOCOL.md while the file was actually under the
+    // override, so the first thing it was asked to do was open a path that
+    // did not exist. Anything an operator or an agent is told to open has to
+    // be derived, not spelled out.
+    initTeam(TEAM);
+    const strings = [
+      protocolText(TEAM),
+      coordinatorPrompt(TEAM, "coordinator"),
+      teammatePrompt(TEAM, "w1", "r", protocolPath(TEAM)),
+    ];
+    for (const s of strings) expect(s).not.toContain("~/.trip/teams");
+    // and the path they do carry is the real one
+    expect(coordinatorPrompt(TEAM, "coordinator")).toContain(teamDir(TEAM));
+  });
 });
 
 describe("engineCommand (§9 tiers)", () => {
@@ -190,6 +225,12 @@ describe("init and step-0 checks (§16)", () => {
     }
     writeTeam(TEAM, roster);
     expect(() => checkSpawn(TEAM, "extra")).toThrow(/4\/4 teammates live/);
+    // The refusal names team.json so the operator knows where to raise the
+    // cap — the fourth derived path, and the one most likely to be edited
+    // later, since it is the only one carrying an instruction about a file
+    // the reader has to go and change.
+    expect(() => checkSpawn(TEAM, "extra")).toThrow(teamJsonPath(TEAM));
+    expect(() => checkSpawn(TEAM, "extra")).not.toThrow(/~\/\.trip\/teams/);
   });
   it("a killed teammate frees its slot; a live one refuses respawn without kill", () => {
     const roster = initTeam(TEAM);
@@ -359,14 +400,35 @@ describe("spawnTeammate (§7)", () => {
     expect(config.kind).toBe("claude");
     expect(config.log_path).toBe("/fake/transcript.jsonl"); // hook path kept
   });
-  it("fails loudly when agent.json never appears", async () => {
+  it("a dead session that never registered says the engine died", async () => {
     initTeam(TEAM);
-    // stub that creates the session but never writes agent.json
+    // creates the session directory but never writes agent.json, and never
+    // reports the name as live, so `ls` shows nothing.
     writeFileSync(join(stubDir, "trip"), `#!/bin/sh\nmkdir -p "${sessions}/$2"\n`);
     chmodSync(join(stubDir, "trip"), 0o755);
     await expect(
       spawnTeammate(TEAM, "w1", { role: "r", cwd: repo, registrationTimeoutMs: 1000 })
-    ).rejects.toThrow(/trip on did not fire/);
+    ).rejects.toThrow(/the session is gone/);
+  });
+  it("a live session that never registered says do not kill it", async () => {
+    // Observed live: a writer parked at its engine's trust dialog, the 15s
+    // registration poll lost the race against the human answering it, and the
+    // teammate registered and started work immediately after the throw.
+    // later.md used to tell the operator to kill and respawn here, which
+    // would have destroyed a healthy teammate mid-task.
+    initTeam(TEAM);
+    writeFileSync(join(stubDir, "trip"),
+      `#!/bin/sh\ncase "$1" in\n  create) mkdir -p "${sessions}/$2"; echo "$2" >> "${stubDir}/live.txt" ;;\n` +
+      `  ls) cat "${stubDir}/live.txt" 2>/dev/null || true ;;\nesac\n`);
+    chmodSync(join(stubDir, "trip"), 0o755);
+    // One attempt only: the session it leaves behind is live, so a second
+    // call is refused by the already-live gate before it can reach this path.
+    const err = await spawnTeammate(TEAM, "w1", {
+      role: "r", cwd: repo, registrationTimeoutMs: 1000,
+    }).catch((e: Error) => e);
+    expect(err.message).toMatch(/waiting at a prompt/);
+    expect(err.message).toMatch(/Do NOT kill it/);
+    expect(err.message).toMatch(/trip team ls/);
   });
 });
 
@@ -602,6 +664,36 @@ describe("waiting matcher (§6)", () => {
         input: { command: "trip msg wait --timeout 550" } }),
     ].join("\n") + "\n");
     expect(deriveStatus(TEAM, "w1")).toBe("waiting");
+  });
+  it("fires for codex, whose exec input is a source string", () => {
+    // Shape copied from a real trip log of a Codex session: name is `exec`
+    // and input is the JavaScript codex runs, with the command embedded.
+    initTeam(TEAM);
+    const roster = readTeam(TEAM)!;
+    roster.agents["w1"] = { role: "r", engine: "codex", session: "t-w1", cwd: "/" };
+    writeTeam(TEAM, roster);
+    const now = Math.floor(Date.now() / 1000);
+    mkdirSync(join(sessions, "t-w1"), { recursive: true });
+    writeFileSync(join(sessions, "t-w1", "log.jsonl"), [
+      JSON.stringify({ type: "agent_session_start", t: now - 100, continuation: "x" }),
+      JSON.stringify({ type: "agent_tool_call", t: now - 5, id: "call_x", name: "exec",
+        input: 'const r = await tools.exec_command({"cmd":"trip message wait","workdir":"/w"});\ntext(r.output);\n' }),
+    ].join("\n") + "\n");
+    expect(deriveStatus(TEAM, "w1")).toBe("waiting");
+  });
+  it("a codex exec that is not the wait loop stays working", () => {
+    initTeam(TEAM);
+    const roster = readTeam(TEAM)!;
+    roster.agents["w1"] = { role: "r", engine: "codex", session: "t-w1", cwd: "/" };
+    writeTeam(TEAM, roster);
+    const now = Math.floor(Date.now() / 1000);
+    mkdirSync(join(sessions, "t-w1"), { recursive: true });
+    writeFileSync(join(sessions, "t-w1", "log.jsonl"), [
+      JSON.stringify({ type: "agent_session_start", t: now - 100, continuation: "x" }),
+      JSON.stringify({ type: "agent_tool_call", t: now - 5, id: "call_y", name: "exec",
+        input: 'const r = await tools.exec_command({"cmd":"git status"});\n' }),
+    ].join("\n") + "\n");
+    expect(deriveStatus(TEAM, "w1")).toBe("working");
   });
 });
 

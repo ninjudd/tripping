@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
 import {
   mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync,
-  existsSync, chmodSync, readdirSync, appendFileSync,
+  existsSync, chmodSync, readdirSync, appendFileSync, cpSync,
 } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -30,7 +30,7 @@ case "$1" in
   kill)
     if grep -qx "$2" "${stubDir}/live.txt" 2>/dev/null; then
       grep -vx "$2" "${stubDir}/live.txt" > "${stubDir}/t" || true; mv "${stubDir}/t" "${stubDir}/live.txt"
-    else echo "session not found" >&2; exit 1; fi ;;
+    else echo "Error: session '$2' not found" >&2; exit 1; fi ;;
   ls) cat "${stubDir}/live.txt" 2>/dev/null || true ;;
   screen) cat "${sessions}/$2/screen.txt" 2>/dev/null || true ;;
   send) echo "SEND $2 $3" >> "${stubDir}/calls.log" ;;
@@ -60,14 +60,31 @@ const calls = () => existsSync(join(stubDir, "calls.log")) ? readFileSync(join(s
 const clearCalls = () => writeFileSync(join(stubDir, "calls.log"), "");
 const now = () => Math.floor(Date.now() / 1000);
 
+
+/** A git repo costs three process spawns to create, and every test needed
+ *  one: ~290 execs across the suite. Build it once per file and copy it
+ *  in-process instead — three execs per file. Worth doing because an exec is
+ *  not free here (a machine running endpoint scanning pays per process), but
+ *  measure before blaming the suite for a slow run: it is 15s on an idle
+ *  machine and 80s on a loaded one, and load has dominated every time. */
+let repoTemplate: string;
+function makeRepoTemplate(): void {
+  repoTemplate = mkdtempSync(join(tmpdir(), "tripping-repo-template-"));
+  execFileSync("git", ["init", "-q", repoTemplate]);
+  writeFileSync(join(repoTemplate, "README.md"), "hi\n");
+  execFileSync("git", ["-C", repoTemplate, "add", "-A"]);
+  execFileSync("git", ["-C", repoTemplate, "-c", "user.email=t@t", "-c", "user.name=t",
+    "commit", "-qm", "init"]);
+}
+
+beforeAll(makeRepoTemplate);
+afterAll(() => rmSync(repoTemplate, { recursive: true, force: true }));
+
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "tripping-watch-"));
   sessions = join(root, "sessions"); stubDir = join(root, "stub"); repo = join(root, "repo");
-  for (const d of [sessions, stubDir, repo]) mkdirSync(d, { recursive: true });
-  execFileSync("git", ["init", "-q", repo]);
-  writeFileSync(join(repo, "README.md"), "hi\n");
-  execFileSync("git", ["-C", repo, "add", "-A"]);
-  execFileSync("git", ["-C", repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"]);
+  for (const d of [sessions, stubDir]) mkdirSync(d, { recursive: true });
+  cpSync(repoTemplate, repo, { recursive: true });
   process.env.TRIP_TEAMS_DIR = join(root, "teams");
   process.env.TRIP_SESSIONS_DIR = sessions;
   savedPath = process.env.PATH!;
@@ -414,9 +431,26 @@ describe("screen guard", () => {
       "Done. The CI job will allow deploys to production once green.",
       "Summary: 3 files changed. Next: ask the reviewer to approve.",
       '> git commit -m "allow admins to bypass the cache"',
+      // Triangle bullets are how agents write a to-do list at the end of a
+      // turn — exactly the tail this guard reads. An earlier selector class
+      // included them and parked healthy teammates on lists like these.
+      "Next steps:\n\u25b8 1. rebase\n\u25b8 2. push",
+      "\u2023 we should allow admins to bypass the cache",
     ]) {
       setScreen("t-x", text);
       expect(screenParked("t-x"), text).toBe(false);
+    }
+  });
+  it("catches both engines' selectors, not just Claude's", () => {
+    // Verbatim from real sessions: Claude renders ❯ (U+276F), Codex › (U+203A).
+    // The Codex one read as unparked until the selector class covered both.
+    const screens = [
+      "Do you want to proceed?\n❯ 1. Yes\n  2. No",
+      "trust the files in this folder?\n› 1. Yes, continue\n  2. No, quit",
+    ];
+    for (const s of screens) {
+      setScreen("t-x", s);
+      expect(screenParked("t-x"), s).toBe(true);
     }
   });
   it("reads only the tail — the same words in scrollback are not a prompt", () => {

@@ -816,6 +816,19 @@ have parked there once. That is the one place this system still needs a person
 before it can run on its own, and anyone reproducing the result above should
 expect it.
 
+**A coordinator spawns its own teammates.** §17 and the caller gate were only
+ever exercised by tests. Run for real, a coordinator session — itself a Claude
+CLI with `TRIP_AGENT=coordinator` — ran `trip team spawn helper`, the gate
+allowed it, the teammate registered, fixed its file, and `bus.jsonl` recorded
+the attribution:
+
+```
+spawn  agent=helper  by=coordinator  engine=claude
+```
+
+That closes the loop the project exists for: an agent adding agents to its own
+team, mid-flight, without a human in the path.
+
 **Five defects that the stub could not have surfaced.** Each is a case where
 the stub and reality disagreed, and the suite believed the stub:
 

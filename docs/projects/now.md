@@ -11,7 +11,11 @@ In flight.
   and status, the watcher — and the first run against a real `trip` is done:
   a coordinator dispatched to two Claude teammates and joined both results in
   32.5 seconds (§19). That run turned up five defects a stubbed `trip` could
-  not have shown, all fixed. All four phases are done, branch
+  not have shown: three fixed here, and two open in trip —
+  [trip#2](https://github.com/ninjudd/trip/pull/2) for the hook's agent kind
+  and [trip#3](https://github.com/ninjudd/trip/pull/3) for
+  `custom_tool_call`. There is no tripping-side workaround for either; the
+  registration hook runs a bare `trip on`. All four phases are done, branch
   integration included: two writers on separate worktrees, both branches
   merged. One question is open and it is the plan owner's — where a writer's
   worktree should live, since both engines refuse an untrusted directory and

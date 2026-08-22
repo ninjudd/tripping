@@ -56,6 +56,8 @@ const setScreen = (session: string, text: string) => {
   writeFileSync(join(sessions, session, "screen.txt"), text);
 };
 const calls = () => existsSync(join(stubDir, "calls.log")) ? readFileSync(join(stubDir, "calls.log"), "utf8") : "";
+/** Drop the spawn's own trip calls so an assertion can only match the respawn's. */
+const clearCalls = () => writeFileSync(join(stubDir, "calls.log"), "");
 const now = () => Math.floor(Date.now() / 1000);
 
 beforeEach(() => {
@@ -109,6 +111,7 @@ describe("respawn sequence (§15)", () => {
     initTeam(TEAM);
     await spawnTeammate(TEAM, "w1", { role: "special role", cwd: repo, yolo: true });
     markDead("t-w1");
+    clearCalls();
     await respawnTeammate(TEAM, "w1", { reason: "context degraded" });
     const row = readTeam(TEAM)!.agents["w1"];
     expect(row.spawns).toBe(2);

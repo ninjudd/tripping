@@ -283,7 +283,10 @@ export async function respawnTeammate(
     `\`trip message read\` first, check \`git status\`, then ` +
     `\`trip message wait\`.\n\n` + basePrompt;
   tripExec(
-    ["create", session, "--", ...engineCommand(row.engine, !!row.yolo, prompt)],
+    ["create", session, "--", ...engineCommand(row.engine, !!row.yolo, prompt, {
+      model: row.model,
+      effort: row.effort,
+    })],
     {
       cwd: row.cwd,
       env: teammateEnv(team, id),

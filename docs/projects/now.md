@@ -8,4 +8,4 @@ In flight.
   message bus. The plan's three open questions are resolved (§14 lifetime,
   §15 task custody and re-delivery, §16 population limits), every launch
   carries an autonomy tier (§9), and implementation starts with Phase 1 — the
-  bus and the `tripping mail` verbs, testable with no agents running.
+  bus and the `tripping message` verbs, testable with no agents running.

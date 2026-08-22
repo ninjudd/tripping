@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "trip on >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ]
+  }
+}

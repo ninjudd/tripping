@@ -8,7 +8,7 @@ import { join } from "path";
 import { execFileSync } from "child_process";
 import {
   initTeam, checkSpawn, spawnTeammate, killTeammate, engineCommand,
-  verifyAgentRegistration, sessionAlive, teammateEnv,
+  verifyAgentRegistration, sessionAlive, teammateEnv, pluginDir,
   AGENT_ENV_PATTERN, INHERITED_AGENT_CONFIG,
 } from "../src/team/spawn.js";
 import { readTeam, writeTeam, DEFAULT_LIMITS } from "../src/team/roster.js";
@@ -127,22 +127,64 @@ describe("operator-facing paths come from paths.ts", () => {
 });
 
 describe("engineCommand (§9 tiers)", () => {
+  const CODEX_HOOK = expect.stringContaining("hooks.SessionStart");
   it("auto tier", () => {
-    expect(engineCommand("claude", false, "p")).toEqual(["claude", "--permission-mode", "auto", "p"]);
-    expect(engineCommand("codex", false, "p")).toEqual(["codex", "--approve-for-me", "p"]);
+    expect(engineCommand("claude", false, "p")).toEqual([
+      "claude", "--permission-mode", "auto", "--plugin-dir", pluginDir(), "p",
+    ]);
+    // The auto tier keeps hook trust: hooks run outside codex's sandbox, so
+    // it is a real boundary and the teammate parks once for a human instead.
+    expect(engineCommand("codex", false, "p")).toEqual([
+      "codex", "--approve-for-me", "-c", CODEX_HOOK, "p",
+    ]);
+    expect(engineCommand("codex", false, "p")).not.toContain("--dangerously-bypass-hook-trust");
   });
   it("yolo tier", () => {
-    expect(engineCommand("claude", true, "p")).toEqual(["claude", "--permission-mode", "bypassPermissions", "p"]);
-    expect(engineCommand("codex", true, "p")).toEqual(["codex", "--dangerously-bypass-approvals-and-sandbox", "p"]);
+    expect(engineCommand("claude", true, "p")).toEqual([
+      "claude", "--permission-mode", "bypassPermissions", "--plugin-dir", pluginDir(), "p",
+    ]);
+    expect(engineCommand("codex", true, "p")).toEqual([
+      "codex", "--dangerously-bypass-approvals-and-sandbox",
+      // yolo has already given up approvals and the sandbox, so withholding
+      // hook trust protects nothing and would park an unattended teammate.
+      "--dangerously-bypass-hook-trust",
+      "-c", CODEX_HOOK, "p",
+    ]);
+  });
+  it("ships the plugin the hook and the skill live in", () => {
+    // Registration is what §6 derives everything from, so the plugin is
+    // load-bearing: if it is missing from the package, every spawn silently
+    // stops registering and no status can be derived.
+    expect(existsSync(join(pluginDir(), ".claude-plugin", "plugin.json"))).toBe(true);
+    expect(existsSync(join(pluginDir(), "hooks", "hooks.json"))).toBe(true);
+    expect(existsSync(join(pluginDir(), "skills", "trip-team", "SKILL.md"))).toBe(true);
+    const hooks = JSON.parse(readFileSync(join(pluginDir(), "hooks", "hooks.json"), "utf8"));
+    expect(JSON.stringify(hooks.hooks.SessionStart)).toContain("trip on");
+  });
+  it("gives codex the same hook, as TOML on the command line", () => {
+    // Neither engine's global config is edited; both get it per launch.
+    const cfg = engineCommand("codex", false, "p")[3];
+    expect(cfg).toContain("hooks.SessionStart");
+    expect(cfg).toContain("trip on");
   });
   it("model and effort ride along, tier flags first and prompt last", () => {
+    // Order is load-bearing: tier flags, then tuning as one contiguous run,
+    // then registration, then the prompt. Callers grep calls.log for the
+    // tuning pair as a substring, so nothing may be interleaved into it.
     expect(engineCommand("claude", false, "p", { model: "opus", effort: "high" })).toEqual([
-      "claude", "--permission-mode", "auto", "--model", "opus", "--effort", "high", "p",
+      "claude", "--permission-mode", "auto", "--model", "opus", "--effort", "high",
+      "--plugin-dir", pluginDir(), "p",
     ]);
     expect(engineCommand("codex", true, "p", { model: "o3", effort: "high" })).toEqual([
       "codex", "--dangerously-bypass-approvals-and-sandbox",
-      "-m", "o3", "-c", "model_reasoning_effort=high", "p",
+      "--dangerously-bypass-hook-trust",
+      "-m", "o3", "-c", "model_reasoning_effort=high",
+      "-c", expect.stringContaining("hooks.SessionStart"), "p",
     ]);
+    expect(engineCommand("claude", false, "p", { model: "opus", effort: "high" }).join(" "))
+      .toContain("--model opus --effort high");
+    expect(engineCommand("codex", false, "p", { model: "o3", effort: "high" }).join(" "))
+      .toContain("-m o3 -c model_reasoning_effort=high");
     expect(engineCommand("claude", false, "p", { model: "claude-fable-5" })).toContain("claude-fable-5");
   });
   it("claude effort is validated against its own enum; codex passes lowercase through", () => {

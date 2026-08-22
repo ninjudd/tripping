@@ -10,7 +10,8 @@ import {
   unlinkSync,
   symlinkSync,
 } from "fs";
-import { join } from "path";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 import { teamDir, validId, teamJsonPath } from "./paths.js";
 import {
   Team,
@@ -163,6 +164,33 @@ export function tripKillTolerant(session: string): void {
   }
 }
 
+/** Where the shipped plugin lives, resolved from this module rather than the
+ *  caller's cwd: dist/team/spawn.js -> the package root -> plugin/. */
+export function pluginDir(): string {
+  return join(dirname(fileURLToPath(import.meta.url)), "..", "..", "plugin");
+}
+
+/** The SessionStart hook both engines run to register with trip.
+ *  Failure is swallowed: outside a trip session `trip on` has nothing to do,
+ *  and a hook that errors on every plain shell is worse than no hook. */
+const REGISTER_HOOK = "trip on >/dev/null 2>&1 || true";
+
+/** Codex takes the same hook shape as its config file, injected per launch as
+ *  TOML on the command line, so tripping never edits ~/.codex/config.toml.
+ *
+ *  Codex gates a new or changed hook behind its own "Hooks need review"
+ *  dialog, so an auto-tier spawn parks until a human answers it once. That is
+ *  a choice, not a limitation — `--dangerously-bypass-hook-trust` would skip
+ *  it — and the choice is deliberate: hooks run outside Codex's sandbox,
+ *  which is precisely why `trip on` needs to be one (from an ordinary Codex
+ *  shell it fails with "Operation not permitted", seatbelt denying the write
+ *  to ~/.trip/sessions/). Burning a real trust boundary by default is worse
+ *  than one human answer. The yolo tier passes the flag, because that tier
+ *  has already surrendered approvals and the sandbox. §8's guard detects the
+ *  dialog either way, so an auto-tier teammate parks visibly. */
+const CODEX_HOOK_CONFIG =
+  `hooks.SessionStart=[{hooks=[{type="command",command=${JSON.stringify(REGISTER_HOOK)}}]}]`;
+
 /** Claude's --effort levels, from its own --help. */
 export const CLAUDE_EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"];
 
@@ -191,8 +219,9 @@ export function validateTuning(engine: Engine, tuning: EngineTuning): void {
 /** §9: every launch carries an autonomy tier; there is no interactive tier.
  *  Model and effort ride along when set — claude via --model/--effort, codex
  *  via -m and -c model_reasoning_effort=… (both verified against the
- *  installed binaries). The tier flags stay first and the prompt last, so
- *  the base command shape is stable whether or not tuning is present. */
+ *  installed binaries). Registration rides along too, and the order is load
+ *  bearing: tier flags first, then tuning as one contiguous run, then
+ *  registration, then the prompt last. */
 export function engineCommand(
   engine: Engine,
   yolo: boolean,
@@ -207,14 +236,32 @@ export function engineCommand(
       yolo ? "bypassPermissions" : "auto",
       ...(tuning.model ? ["--model", tuning.model] : []),
       ...(tuning.effort ? ["--effort", tuning.effort] : []),
+      // Session-scoped: carries the SessionStart hook that runs `trip on` and
+      // the trip-team skill. Without registration §6 can derive nothing at
+      // all, so this is load-bearing, not a convenience.
+      "--plugin-dir",
+      pluginDir(),
       prompt,
     ];
   }
   return [
     "codex",
-    yolo ? "--dangerously-bypass-approvals-and-sandbox" : "--approve-for-me",
+    ...(yolo
+      ? [
+          "--dangerously-bypass-approvals-and-sandbox",
+          // Hook trust is a real boundary — hooks run outside the sandbox —
+          // so the auto tier keeps it and a Codex teammate parks once for a
+          // human to answer. The yolo tier has already given up approvals and
+          // the sandbox itself (§9); withholding hook trust there protects
+          // nothing that is left, and it would park the one tier whose whole
+          // point is running unattended.
+          "--dangerously-bypass-hook-trust",
+        ]
+      : ["--approve-for-me"]),
     ...(tuning.model ? ["-m", tuning.model] : []),
     ...(tuning.effort ? ["-c", `model_reasoning_effort=${tuning.effort}`] : []),
+    "-c",
+    CODEX_HOOK_CONFIG,
     prompt,
   ];
 }

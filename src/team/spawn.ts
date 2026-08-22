@@ -47,7 +47,7 @@ export interface SpawnOptions {
   coordinator?: boolean;
 }
 
-function trip(args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): string {
+export function tripExec(args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): string {
   try {
     return execFileSync("trip", args, {
       encoding: "utf8",
@@ -74,7 +74,7 @@ function tripErrorText(err: unknown): string {
 export function sessionAlive(session: string): boolean {
   let out: string;
   try {
-    out = trip(["ls", "-a"]);
+    out = tripExec(["ls", "-a"]);
   } catch {
     return false; // no daemon, no sessions
   }
@@ -83,9 +83,9 @@ export function sessionAlive(session: string): boolean {
 }
 
 /** Tolerate exactly the error the primitives name; rethrow the rest. */
-function tripKillTolerant(session: string): void {
+export function tripKillTolerant(session: string): void {
   try {
-    trip(["kill", session]);
+    tripExec(["kill", session]);
   } catch (err: unknown) {
     if (tripErrorText(err).includes("session not found")) return;
     throw err;
@@ -100,6 +100,16 @@ export function engineCommand(engine: Engine, yolo: boolean, prompt: string): st
   return yolo
     ? ["codex", "--dangerously-bypass-approvals-and-sandbox", prompt]
     : ["codex", "--approve-for-me", prompt];
+}
+
+/** Only the coordinator or a human shell may spawn, respawn, or kill. */
+export function callerGate(roster: Team): void {
+  const caller = process.env.TRIP_AGENT;
+  if (caller && caller !== roster.coordinator) {
+    throw new Error(
+      `teammates cannot spawn or kill (v1). Ask the coordinator: trip message send coordinator --kind question`
+    );
+  }
 }
 
 export interface CheckOptions {
@@ -328,6 +338,7 @@ export async function spawnTeammate(
     session,
     cwd,
     ...(worktree ? { worktree, branch } : {}),
+    ...(opts.yolo ? { yolo: true } : {}),
     spawned_at: new Date().toISOString(),
     spawns: (prior?.spawns ?? 0) + 1,
     restarts_since_human: opts.auto
@@ -348,7 +359,7 @@ export async function spawnTeammate(
     : protocolPath(team);
   const prompt =
     opts.prompt ?? teammatePrompt(team, id, opts.role, protocolRef);
-  trip(["create", session, "--", ...engineCommand(engine, !!opts.yolo, prompt)], {
+  tripExec(["create", session, "--", ...engineCommand(engine, !!opts.yolo, prompt)], {
     cwd,
     env: { ...process.env, TRIP_TEAM: team, TRIP_AGENT: id },
   });

@@ -17,6 +17,16 @@ import { readTeam } from "../team/roster.js";
 import { deriveStatus, sessionName } from "../team/status.js";
 import { inboxDir, workingDir, deadDir } from "../team/paths.js";
 import { coordinatorPrompt } from "../team/protocol.js";
+import { respawnTeammate } from "../team/respawn.js";
+import { requeueMessage } from "../team/mailbox.js";
+import { watchTeam } from "../team/watcher.js";
+import {
+  dispatchTasks,
+  awaitResults,
+  joinFailed,
+  TaskSpec,
+} from "../team/dispatch.js";
+import { readFileSync } from "fs";
 
 function fail(message: string): never {
   process.stderr.write(`trip team: ${message}\n`);
@@ -200,13 +210,85 @@ async function main(): Promise<void> {
       );
     }
 
-    case "respawn":
-    case "requeue":
-    case "dispatch":
-      fail(`'${verb}' lands in Phase 3 (the watcher) — not implemented yet`);
+    case "respawn": {
+      const flags = parseFlags(rest, new Set(["team", "reason"]), new Set(["force"]));
+      const id = flags.positional[0];
+      if (!id) fail('usage: trip team respawn <id> [--reason "..."] [--force]');
+      const result = await respawnTeammate(teamFromEnv(flags), id, {
+        reason: flags.reason as string | undefined,
+        force: !!flags.force,
+      });
+      process.stdout.write(
+        `respawned ${result.id} (${result.session})` +
+          (result.checkpoint ? ` — worktree checkpointed at ${result.checkpoint.slice(0, 8)}` : "") +
+          "\n"
+      );
+      return;
+    }
+
+    case "requeue": {
+      const flags = parseFlags(rest, new Set(["team"]), new Set());
+      const [id, msgId] = flags.positional;
+      if (!id || !msgId) fail("usage: trip team requeue <id> <msg-id>");
+      const source = requeueMessage(teamFromEnv(flags), id, msgId);
+      process.stdout.write(`re-queued ${msgId} from ${source}/ into ${id}'s inbox\n`);
+      return;
+    }
+
+    case "dispatch": {
+      const flags = parseFlags(rest, new Set(["team", "timeout"]), new Set(["wait"]));
+      const file = flags.positional[0];
+      if (!file)
+        fail('usage: trip team dispatch <tasks.json> [--wait] [--timeout <s>] — file: [{"to","subject","body"}]');
+      const team = teamFromEnv(flags);
+      const from = process.env.TRIP_AGENT ?? "coordinator";
+      let tasks: TaskSpec[];
+      try {
+        tasks = JSON.parse(readFileSync(file, "utf8")) as TaskSpec[];
+      } catch (err) {
+        fail(`could not read ${file}: ${(err as Error).message}`);
+      }
+      if (!Array.isArray(tasks) || tasks.some((t) => !t.to || !t.subject || t.body === undefined))
+        fail(`${file} must be a JSON array of {to, subject, body}`);
+      const outcomes = dispatchTasks(team, from, tasks);
+      for (const o of outcomes)
+        process.stdout.write(`dispatched to ${o.to}: ${o.subject} (thread ${o.thread})\n`);
+      if (!flags.wait) return;
+      const timeout = Number((flags.timeout as string) ?? "3600");
+      const { done, pending } = await awaitResults(team, outcomes, {
+        timeoutMs: timeout * 1000,
+      });
+      for (const o of done)
+        process.stdout.write(
+          joinFailed(o)
+            ? `FAILED ${o.thread} (${o.subject}) — dead-lettered; see coordinator inbox\n`
+            : `done ${o.thread} (${o.subject}) — result from ${o.resultFrom}\n`
+        );
+      if (pending.length > 0) {
+        for (const o of pending)
+          process.stderr.write(`timed out waiting on ${o.thread} (${o.to}: ${o.subject})\n`);
+        process.exit(1);
+      }
+      process.stdout.write("all results in — run: trip message read\n");
+      return;
+    }
+
+    case "watcher": {
+      const flags = parseFlags(rest, new Set(["team", "interval"]), new Set(["once"]));
+      const team = teamFromEnv(flags);
+      const interval = Number((flags.interval as string) ?? "5");
+      if (!Number.isFinite(interval) || interval < 1)
+        fail("--interval must be a positive number of seconds");
+      process.stdout.write(`watching team ${team} (every ${interval}s)\n`);
+      await watchTeam(team, {
+        intervalMs: interval * 1000,
+        once: !!flags.once,
+      });
+      return;
+    }
 
     default:
-      fail("usage: trip team <init|start|spawn|ls|kill|watch>");
+      fail("usage: trip team <init|start|spawn|respawn|requeue|dispatch|ls|kill|watch|watcher>");
   }
 }
 

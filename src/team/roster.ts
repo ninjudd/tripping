@@ -10,10 +10,19 @@ export interface AgentRow {
   cwd: string;
   worktree?: string;
   branch?: string;
+  yolo?: boolean;
   spawned_at?: string;
   spawns?: number;
   restarts_since_human?: number;
   killed_at?: string;
+  /** Watcher bookkeeping: a parked-at-prompt note was sent this park. */
+  park_noted?: boolean;
+  /** Watcher bookkeeping: the breaker-tripped note was sent this outage. */
+  breaker_noted?: boolean;
+  /** Watcher bookkeeping: consecutive doorbells the park guard has eaten. */
+  park_suppressed?: number;
+  /** Watcher bookkeeping: the long-park escalation was sent this park. */
+  park_escalated?: boolean;
 }
 
 export interface Team {
@@ -83,6 +92,21 @@ export function writeTeam(team: string, data: Team): void {
   const staging = join(tmpDir(team), `team-${newId()}.json`);
   writeFileSync(staging, JSON.stringify(data, null, 2) + "\n");
   renameSync(staging, teamJsonPath(team));
+}
+
+/** Re-read, mutate one row, write. Never hold a roster object across a call
+ *  that also writes the roster: the stale write-back silently undoes the
+ *  other writer — a respawn's spawned_at and breaker counters especially. */
+export function updateRow(
+  team: string,
+  id: string,
+  mutate: (row: AgentRow) => void
+): void {
+  const roster = readTeam(team);
+  const row = roster?.agents[id];
+  if (!roster || !row) return;
+  mutate(row);
+  writeTeam(team, roster);
 }
 
 /**

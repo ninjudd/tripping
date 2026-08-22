@@ -119,6 +119,7 @@ trip team ls                     # roster + status, live count vs cap
 trip team kill <id>
 trip team watch <id>             # tail a teammate's structured log
 trip team dispatch <file> --wait # fan out tasks, block until all results
+trip team watcher [--interval 5]  # the Phase 3 loop: sweep, doorbells, respawns
 ```
 
 `--wait` is sugar over the same primitives, for when the coordinator wants

@@ -41,7 +41,7 @@ case "$1" in
       grep -vx "$2" "${stubDir}/live.txt" > "${stubDir}/live.tmp" || true
       mv "${stubDir}/live.tmp" "${stubDir}/live.txt"
     else
-      echo "session not found" >&2; exit 1
+      echo "Error: session '$2' not found" >&2; exit 1
     fi
     ;;
   ls)

@@ -87,7 +87,12 @@ export function tripKillTolerant(session: string): void {
   try {
     tripExec(["kill", session]);
   } catch (err: unknown) {
-    if (tripErrorText(err).includes("session not found")) return;
+    // trip quotes the name: "session 'proof-w1' not found". Matching the
+    // literal "session not found" never fired against a real trip, so a
+    // respawn of an already-dead teammate failed at step 3 — which is the
+    // ordinary case the watcher hits every time a session dies. Only the
+    // stub said it unquoted, so the suite agreed with the bug.
+    if (/session (?:'[^']*' )?not found/.test(tripErrorText(err))) return;
     throw err;
   }
 }

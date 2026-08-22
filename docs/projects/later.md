@@ -20,11 +20,13 @@ in the
 the
   cost of the thing that makes this design worth having — see
   [`agent-orchestrator.md`](all/agent-orchestrator.md) §11.
-- **Teach trip's codex parser `custom_tool_call`.** Codex records shell
-  execution as `response_item`/`custom_tool_call` named `exec`;
+- **Teach trip's codex parser `custom_tool_call`** — in flight, not merely
+  wanted: [trip#3](https://github.com/ninjudd/trip/pull/3) is open. Codex
+  records shell execution as `response_item`/`custom_tool_call` named `exec`;
   `parse_codex_line` handles only `function_call`, `function_call_output` and
   `reasoning`, so shell calls emit no `agent_tool_call` and the waiting status
-  is underivable for Codex teammates — see
+  is underivable for Codex teammates. tripping's matcher already handles the
+  `exec` shape, so the status starts deriving the moment that lands — see
   [`agent-orchestrator.md`](all/agent-orchestrator.md) §6.
 - **`--size` on `trip create`.** The PTY opens at a hardcoded 80x24. Both TUIs
   cope and attaching resizes it, so this waits until it actually annoys someone.
@@ -59,10 +61,11 @@ the
   the error alone destroys a healthy teammate mid-task along with whatever it
   has not committed.
 
-  The fix is to unwind both on failure, or to say in the error which case it
-  is — the spawn can tell, since it can read the screen. A blindly longer
-  timeout is the weaker option: 15 seconds is a bet that no human is involved,
-  and the right answer is to notice when one is. See
+  Half of the fix has landed: the error now says which case it is, so it
+  tells you not to kill a live one (#21). What remains is unwinding the
+  session and the roster row on failure, so the name is not left held. A
+  blindly longer timeout stays the weaker option: 15 seconds is a bet that no
+  human is involved, and the right answer is to notice when one is. See
   [`agent-orchestrator.md`](all/agent-orchestrator.md) §7 and §19.
 - **Writer worktrees land where neither engine trusts them.** §7 puts them at
   `~/.trip/teams/<team>/wt/<id>`, and both Claude and Codex gate an untrusted

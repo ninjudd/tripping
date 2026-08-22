@@ -484,7 +484,11 @@ claim — acceptable with both packages under one owner.
    never auto-reclaimed from a possibly-live incarnation. (A *dead* teammate
    that never sent its result is §15's ordinary re-delivery case.)
 4. **Proof.** A coordinator spawns two teammates, dispatches tasks, collects
-   results, and integrates the branches.
+   results, and integrates the branches. Done — recorded in §19, including
+   the writer path with worktrees and branch integration. One caveat stands:
+   a writer's worktree lands where neither engine trusts it, so each one
+   needs a single human answer at spawn until the siting question on
+   [`later.md`](../later.md) is decided.
 
 ## 13. Open questions
 
@@ -778,3 +782,110 @@ directory and references from `AGENTS.md`, because that is what survives a
 compaction. Codex reads skills from its own directory rather than from a
 `--plugin-dir`, so today the skill reaches Claude teammates and the protocol
 reaches both.
+
+## 19. What the first real run proved, and what it cost
+
+Phases 1 to 3 were built against a `trip` stub, because no Rust toolchain
+existed on the development machine. Everything below is the first execution
+against a real trip, and it is recorded here because the gap between the two
+was the most productive thing in the project.
+
+**The loop works.** A coordinator dispatched two tasks to two Claude
+teammates; both read the bus, fixed their file, verified with `python3`, and
+answered on the right thread. `trip team dispatch --wait` joined both results
+in **32.5 seconds**, and `bus.jsonl` balanced exactly: two spawns, two tasks,
+two claims, two results, two closes. Afterwards both teammates derived
+`waiting` — §6's Claude-only status — so they were genuinely blocked in
+`trip message wait`, ready for another round rather than idle.
+
+**Task custody survives a real crash.** §15 is the most intricate sequence in
+the plan and the one hardest to trust from unit tests, so it was run against a
+live teammate: dispatch, wait for the claim, `trip kill` the session while it
+held the task, then one sweep. `bus.jsonl` records the whole recovery —
+
+```
+claim      w1  01M0M72ENVWX…
+redeliver  w1  01M0M72ENVWX…  attempt 1
+claim      w1  01M0M72ENVWX…
+```
+
+— and the fresh incarnation found two messages waiting: the restart notice,
+and the companion note telling it its predecessor died holding this task and
+to check `git log` before redoing work. It then re-claimed the task and
+carried on. Nothing was lost and nothing was duplicated.
+
+**Mixed engines are real.** A Claude teammate and a Codex teammate on one
+team, dispatched to at once, both results joined in 34.6s. `trip team ls`
+shows `claude` and `codex` side by side and the bus does not distinguish them.
+
+The Codex teammate ran on `--yolo`, which is what let the run be unattended:
+that tier passes `--dangerously-bypass-hook-trust`, so §18's hook dialog never
+appeared and no human answered anything. An auto-tier Codex teammate would
+have parked there once. That is the one place this system still needs a person
+before it can run on its own, and anyone reproducing the result above should
+expect it.
+
+**A coordinator spawns its own teammates.** §17 and the caller gate were only
+ever exercised by tests. Run for real, a coordinator session — itself a Claude
+CLI with `TRIP_AGENT=coordinator` — ran `trip team spawn helper`, the gate
+allowed it, the teammate registered, fixed its file, and `bus.jsonl` recorded
+the attribution:
+
+```
+spawn  agent=helper  by=coordinator  engine=claude
+```
+
+That closes the loop the project exists for: an agent adding agents to its own
+team, mid-flight, without a human in the path.
+
+**The writer path, end to end, including integration.** Two writer teammates,
+each in its own worktree on its own branch, both given a file to change and
+commit. `dispatch --wait` joined both results, and the branches merged into
+`main` cleanly:
+
+```
+d7ff082  Change b() to return 20      team/wt/wb
+898dbbc  Change a() to return 10      team/wt/wa
+→ merged; a() = 10, b() = 20
+```
+
+That is §12's Phase 4 in full. The one cost: each writer parked at its
+engine's trust dialog on first spawn and needed a human to answer it, because
+§7 sites worktrees under `~/.trip/teams/<team>/wt/<id>`, which no engine has
+trusted. Answering it is a legitimate operator decision about a directory the
+operator's own team just created — but it must be a person, and until the
+siting question on [`later.md`](../later.md) is settled, the writer path is
+not unattended.
+
+One incidental confirmation: the second writer's spawn *reported* a
+registration failure and was in fact running and working the whole time. That
+is the leftover-session finding on `later.md`, observed rather than reasoned
+about — the throw does not mean the teammate is absent.
+
+**Five defects that the stub could not have surfaced.** Each is a case where
+the stub and reality disagreed, and the suite believed the stub:
+
+| Defect | Why the stub hid it |
+|---|---|
+| A teammate inherited the coordinator's `CLAUDE_CODE_CHILD_SESSION`, so it disabled its own transcript and could never register | the stub never modelled the caller's environment |
+| `trip on` was never run at all — no `SessionStart` hook exists by default | the stub wrote `agent.json` itself |
+| `trip on` from a hook registered Claude sessions as `codex`, so the wrong parser ran and logged zero agent events | the stub wrote the right `kind` |
+| `tripKillTolerant` matched `"session not found"`; trip prints `session 'name' not found`, so it rethrew on the one error it exists to swallow | the stub printed the unquoted form |
+| Codex records shell work as `custom_tool_call`, which trip's parser dropped, so a Codex teammate logged no tool calls | the stub emitted no agent events at all |
+
+The last two are the instructive ones: a stub that is wrong about a *message
+format* is more dangerous than no stub, because it makes the suite agree with
+the bug. Correcting the two stubs to print what trip prints, and changing
+nothing else, turns **12 passing tests red** on `0a1ff01` — across `kill`,
+§17's already-live gate, §16's breaker and §15's respawn sequence. The base
+matters to that count and it is worth re-measuring rather than quoting:
+the same experiment on `87dd48e` gives 11.
+
+**Two gates neither engine lets an orchestrator past.** Both Claude and Codex
+refuse an untrusted directory, and Codex separately refuses an untrusted hook.
+Trust inherits from an enclosing trusted repository — a plain subdirectory and
+a git worktree both pass — but an independent checkout elsewhere does not, and
+tripping must not grant trust on an operator's behalf by editing their config.
+The yolo tier passes `--dangerously-bypass-hook-trust` because §9 says that
+tier has already surrendered more than this; the auto tier keeps it and parks
+once, visibly, for a human.

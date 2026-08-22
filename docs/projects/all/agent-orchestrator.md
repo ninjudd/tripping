@@ -479,10 +479,11 @@ claim — acceptable with both packages under one owner.
    never auto-reclaimed from a possibly-live incarnation. (A *dead* teammate
    that never sent its result is §15's ordinary re-delivery case.)
 4. **Proof.** A coordinator spawns two teammates, dispatches tasks, collects
-   results, and integrates the branches. The first three are done and
-   recorded in §19; branch integration waits on the worktree siting question
-   [`later.md`](../later.md) raises, because a writer's worktree currently
-   lands where neither engine trusts it.
+   results, and integrates the branches. Done — recorded in §19, including
+   the writer path with worktrees and branch integration. One caveat stands:
+   a writer's worktree lands where neither engine trusts it, so each one
+   needs a single human answer at spawn until the siting question on
+   [`later.md`](../later.md) is decided.
 
 ## 13. Open questions
 
@@ -831,6 +832,30 @@ spawn  agent=helper  by=coordinator  engine=claude
 
 That closes the loop the project exists for: an agent adding agents to its own
 team, mid-flight, without a human in the path.
+
+**The writer path, end to end, including integration.** Two writer teammates,
+each in its own worktree on its own branch, both given a file to change and
+commit. `dispatch --wait` joined both results, and the branches merged into
+`main` cleanly:
+
+```
+d7ff082  Change b() to return 20      team/wt/wb
+898dbbc  Change a() to return 10      team/wt/wa
+→ merged; a() = 10, b() = 20
+```
+
+That is §12's Phase 4 in full. The one cost: each writer parked at its
+engine's trust dialog on first spawn and needed a human to answer it, because
+§7 sites worktrees under `~/.trip/teams/<team>/wt/<id>`, which no engine has
+trusted. Answering it is a legitimate operator decision about a directory the
+operator's own team just created — but it must be a person, and until the
+siting question on [`later.md`](../later.md) is settled, the writer path is
+not unattended.
+
+One incidental confirmation: the second writer's spawn *reported* a
+registration failure and was in fact running and working the whole time. That
+is the leftover-session finding on `later.md`, observed rather than reasoned
+about — the throw does not mean the teammate is absent.
 
 **Five defects that the stub could not have surfaced.** Each is a case where
 the stub and reality disagreed, and the suite believed the stub:

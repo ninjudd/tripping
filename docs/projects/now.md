@@ -11,7 +11,9 @@ In flight.
   and status, the watcher — and the first run against a real `trip` is done:
   a coordinator dispatched to two Claude teammates and joined both results in
   32.5 seconds (§19). That run turned up five defects a stubbed `trip` could
-  not have shown, all fixed. What remains of Phase 4 is branch integration,
-  which waits on where a writer's worktree should live: both engines refuse an
-  untrusted directory, and `~/.trip/teams/<team>/wt/<id>` is one
-  ([`later.md`](later.md)).
+  not have shown, all fixed. All four phases are done, branch
+  integration included: two writers on separate worktrees, both branches
+  merged. One question is open and it is the plan owner's — where a writer's
+  worktree should live, since both engines refuse an untrusted directory and
+  `~/.trip/teams/<team>/wt/<id>` is one, so each writer needs a single human
+  answer at spawn until it is settled ([`later.md`](later.md)).

@@ -231,20 +231,23 @@ incarnation's idle.
 | `agent_turn_end`, `agent_session_end` | idle |
 | none yet, boundary set by a respawn's `spawned_at` | starting — bounded: silence long past registration derives unknown |
 | `agent_activity`, `agent_text`, `agent_tool_call` | working |
-| a `Bash` `agent_tool_call` whose input runs `trip message wait`, no result yet | waiting — Claude only |
+| a shell `agent_tool_call` whose input runs `trip message wait`, no result yet | waiting — both engines once trip#3 lands; Claude only until then |
 | none | unknown — `trip on` never fired, or it is a plain shell |
 
-The waiting row is derivable only for Claude teammates today. The tool call's
-`name` field is the tool, not the command — `Bash`, with the command inside the
-call's `input` — so the derivation inspects the input rather than matching the
-name. Codex records shell execution as a `custom_tool_call` named `exec`, which
-trip's codex parser currently drops, so a Codex teammate blocked on
-`trip message wait` keeps reading as working. §8 loses nothing — the
-doorbell stays quiet for working and waiting alike — but `trip team ls`
-cannot separate a Codex teammate blocked on messages from one grinding
-through a task. Teaching trip's parser `custom_tool_call` closes the gap; it
-is the next trip change this plan would want, after §4's dispatcher, and it
-is on [`later.md`](../later.md).
+The tool call's `name` field is the tool, not the command, so the derivation
+inspects the input rather than matching the name — and the two engines shape
+that input differently. Claude logs a `Bash` call with the command in
+`input.command`. Codex logs an `exec` call whose `input` is the JavaScript it
+runs, with the command embedded in it. The matcher handles both.
+
+**Codex is dormant until [trip#3](https://github.com/ninjudd/trip/pull/3)
+merges.** Codex records shell execution as a `custom_tool_call`, which trip's
+parser drops, so no `exec` events reach the log and the Codex branch never
+fires — the behaviour is Claude-only, as it has been, rather than wrong. Once
+that lands, `waiting` derives for both. Until then `trip team ls` cannot
+separate a Codex teammate blocked on messages from one grinding through a
+task. §8 loses nothing either way: the doorbell stays quiet for working and
+waiting alike.
 
 The last row is a spawn failure, not a degraded mode. Everything else here
 depends on it, so §7 checks for it explicitly.
@@ -521,10 +524,10 @@ teammate is reassigned to unrelated work, when it observes degradation, or when
 a teammate self-reports a bad compaction (`message send coordinator --kind
 control`). The boundary for a deliberate respawn is the result message for the
 last dispatched task having arrived, matched by thread — not derived status,
-which cannot confirm idleness for a Codex teammate (§6). Incarnations share the
-mailbox, so messages landing during the respawn window simply wait in
-`inbox/`. When no inherited context is wanted at all, kill and spawn a new id
-instead.
+which cannot confirm idleness for a Codex teammate until trip#3 lands (§6).
+Incarnations share the mailbox, so messages landing during the respawn window
+simply wait in `inbox/`. When no inherited context is wanted at all, kill and
+spawn a new id instead.
 
 Every respawn writes a restart notice — an ordinary `kind: control` message
 from `tripping` carrying `--reason` — into the fresh incarnation's inbox, so

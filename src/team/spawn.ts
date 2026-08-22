@@ -12,7 +12,7 @@ import {
 } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { teamDir, validId } from "./paths.js";
+import { teamDir, validId, teamJsonPath } from "./paths.js";
 import {
   Team,
   AgentRow,
@@ -349,7 +349,7 @@ export function checkSpawn(
     if (live >= roster.limits.max_agents && !(existing && !existing.killed_at)) {
       refuse(
         `${live}/${roster.limits.max_agents} teammates live (limits.max_agents in ` +
-          `~/.trip/teams/${team}/team.json). Free a slot: trip team kill <id>. ` +
+          `${teamJsonPath(team)}). Free a slot: trip team kill <id>. ` +
           `Raising the cap is a human edit of team.json.`
       );
     }

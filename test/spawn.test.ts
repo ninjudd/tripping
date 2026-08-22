@@ -13,8 +13,8 @@ import {
 } from "../src/team/spawn.js";
 import { readTeam, writeTeam, DEFAULT_LIMITS } from "../src/team/roster.js";
 import { deriveStatus } from "../src/team/status.js";
-import { protocolPath } from "../src/team/protocol.js";
-import { teamDir } from "../src/team/paths.js";
+import { protocolPath, protocolText, coordinatorPrompt, teammatePrompt } from "../src/team/protocol.js";
+import { teamDir, teamJsonPath } from "../src/team/paths.js";
 
 const TEAM = "t";
 let root: string;
@@ -89,6 +89,25 @@ afterEach(() => {
   delete process.env.TRIP_TEAMS_DIR;
   delete process.env.TRIP_SESSIONS_DIR;
   rmSync(root, { recursive: true, force: true });
+});
+
+describe("operator-facing paths come from paths.ts", () => {
+  it("never hardcodes ~/.trip/teams, so TRIP_TEAMS_DIR is honoured everywhere", () => {
+    // Found live: `trip team start` told the coordinator to read
+    // ~/.trip/teams/<team>/PROTOCOL.md while the file was actually under the
+    // override, so the first thing it was asked to do was open a path that
+    // did not exist. Anything an operator or an agent is told to open has to
+    // be derived, not spelled out.
+    initTeam(TEAM);
+    const strings = [
+      protocolText(TEAM),
+      coordinatorPrompt(TEAM, "coordinator"),
+      teammatePrompt(TEAM, "w1", "r", protocolPath(TEAM)),
+    ];
+    for (const s of strings) expect(s).not.toContain("~/.trip/teams");
+    // and the path they do carry is the real one
+    expect(coordinatorPrompt(TEAM, "coordinator")).toContain(teamDir(TEAM));
+  });
 });
 
 describe("engineCommand (§9 tiers)", () => {
@@ -190,6 +209,12 @@ describe("init and step-0 checks (§16)", () => {
     }
     writeTeam(TEAM, roster);
     expect(() => checkSpawn(TEAM, "extra")).toThrow(/4\/4 teammates live/);
+    // The refusal names team.json so the operator knows where to raise the
+    // cap — the fourth derived path, and the one most likely to be edited
+    // later, since it is the only one carrying an instruction about a file
+    // the reader has to go and change.
+    expect(() => checkSpawn(TEAM, "extra")).toThrow(teamJsonPath(TEAM));
+    expect(() => checkSpawn(TEAM, "extra")).not.toThrow(/~\/\.trip\/teams/);
   });
   it("a killed teammate frees its slot; a live one refuses respawn without kill", () => {
     const roster = initTeam(TEAM);

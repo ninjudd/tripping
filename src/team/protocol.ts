@@ -5,7 +5,7 @@
  * every compaction; worktree-less roles get the canonical path in their
  * role prompt instead.
  */
-import { teamDir } from "./paths.js";
+import { teamDir, teamJsonPath } from "./paths.js";
 import { join } from "path";
 
 export const protocolPath = (team: string) => join(teamDir(team), "PROTOCOL.md");
@@ -38,7 +38,7 @@ without calling \`trip message wait\`.
 
 ## Your memory
 
-The mail directories under ~/.trip/teams/${team}/agents/<your id>/ are
+The mail directories under ${teamDir(team)}/agents/<your id>/ are
 your durable memory; your context window is a cache of them.
 
 - inbox/    what you owe
@@ -77,7 +77,7 @@ message. Never end a turn without calling \`trip message wait\`.`;
 export function coordinatorPrompt(team: string, coordinatorId: string): string {
   return `You are ${coordinatorId}, the coordinator of team ${team}.
 
-Read ${"~/.trip/teams/" + team + "/PROTOCOL.md"} for the messaging contract.
+Read ${protocolPath(team)} for the messaging contract.
 You direct the team: spawn teammates with \`trip team spawn <id> --role
 "..." [--engine claude|codex] [--worktree]\`, see them with \`trip team
 ls\`, and dispatch work with the body on stdin —
@@ -85,7 +85,7 @@ ls\`, and dispatch work with the body on stdin —
 every task self-contained, referencing prior work by thread id, never
 assumed recall. Collect results with \`trip message read\` and
 block between rounds with \`trip message wait\`. Teammates address you as
-coordinator. Team limits live in ~/.trip/teams/${team}/team.json.`;
+coordinator. Team limits live in ${teamJsonPath(team)}.`;
 }
 
 export function agentsMdText(team: string): string {

@@ -17,16 +17,30 @@ export function sessionName(team: string, id: string): string {
   return `${team}-${id}`;
 }
 
-/** The one per-engine branch (§6): a shell tool call whose input runs
- *  `trip message wait`. The tool name is Bash for Claude with the command
- *  in input; Codex records shell as custom_tool_call, which trip's parser
- *  currently drops, so waiting is derivable for Claude only. */
+/** §6's one per-engine branch: a shell tool call whose input runs
+ *  `trip message wait`. The two engines record the same act differently.
+ *
+ *  Claude logs a `Bash` call with the command in `input.command`.
+ *
+ *  Codex logs an `exec` call whose `input` is a *source string* — the
+ *  JavaScript it runs, with the command embedded in it, like
+ *  `const r = await tools.exec_command({"cmd":"trip message wait"})`. trip
+ *  produces those only once it normalizes `custom_tool_call`
+ *  ([trip#3](https://github.com/ninjudd/trip/pull/3)); before that no `exec`
+ *  events exist and this branch simply never fires, which is the old
+ *  Claude-only behaviour rather than a regression. */
 const WAIT_COMMAND = /\btrip(?:-message|-msg)?\s+(?:message\s+|msg\s+)?wait\b/;
 
 function isMessageWaitCall(event: TripEvent): boolean {
-  if (event.type !== "agent_tool_call" || event.name !== "Bash") return false;
-  const command = (event.input as { command?: unknown } | undefined)?.command;
-  return typeof command === "string" && WAIT_COMMAND.test(command);
+  if (event.type !== "agent_tool_call") return false;
+  if (event.name === "Bash") {
+    const command = (event.input as { command?: unknown } | undefined)?.command;
+    return typeof command === "string" && WAIT_COMMAND.test(command);
+  }
+  if (event.name === "exec") {
+    return typeof event.input === "string" && WAIT_COMMAND.test(event.input);
+  }
+  return false;
 }
 
 export function deriveStatus(team: string, id: string): Status {

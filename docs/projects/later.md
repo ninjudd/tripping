@@ -53,11 +53,6 @@ the
   surfaced it is fixed in
   [`agent-orchestrator.md`](all/agent-orchestrator.md) §7, but the leftover
   state is not.
-- **No way to run a single reconcile sweep from the CLI.** `watchTeam` takes
-  `{ once: true }` and the tests use it, but `trip team watcher` only runs the
-  loop, so an operator debugging one sweep has to write JavaScript. A `--once`
-  flag would make the watcher inspectable —
-  [`agent-orchestrator.md`](all/agent-orchestrator.md) §12.
 - **Writer worktrees land where neither engine trusts them.** §7 puts them at
   `~/.trip/teams/<team>/wt/<id>`, and both Claude and Codex gate an untrusted
   directory behind a prompt the teammate cannot answer — so every writer

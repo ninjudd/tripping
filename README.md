@@ -17,12 +17,15 @@ $ trip team spawn api --role "the API"      # …which spawns teammates
 $ trip team spawn ui --engine codex --role "the UI"
 $ trip team ls
 team mycrew — 2/4 teammates live (limits: team.json)
+  coordinator    claude idle     age 3m   spawns 1   0 in / 0 held / 0 dead  coordinator
   api            claude waiting  age 2m   spawns 1   0 in / 0 held / 0 dead  the API
   ui             codex  working  age 2m   spawns 1   0 in / 1 held / 0 dead  the UI
 ```
 
-Claude and Codex teammates work side by side on the same team; the bus does
-not care which engine is behind an id. Status derivation is not quite
+The coordinator is on the roster like anyone else and is listed with the
+rest; the count in the header is teammates, so it excludes it. Claude and
+Codex teammates work side by side on the same team, and the bus does not care
+which engine is behind an id. Status derivation is not quite
 symmetric yet: `waiting` means an agent is blocked in `trip message wait`,
 and it is derived from a shell tool call that only Claude currently records
 in a form trip parses — so a Codex teammate blocked in the wait reads as

@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "telegram": "node --env-file=.env --import=tsx src/telegram/index.ts",
-    "discord": "node --env-file=.env --import=tsx src/discord/index.ts"
+    "discord": "node --env-file=.env --import=tsx src/discord/index.ts",
+    "build": "tsc",
+    "test": "vitest run"
   },
   "dependencies": {
     "discord.js": "^14.26.4",
@@ -14,6 +16,14 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
-  }
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "bin": {
+    "trip-message": "dist/cli/message.js",
+    "trip-msg": "dist/cli/message.js"
+  },
+  "files": [
+    "dist"
+  ]
 }

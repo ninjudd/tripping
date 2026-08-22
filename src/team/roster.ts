@@ -10,10 +10,15 @@ export interface AgentRow {
   cwd: string;
   worktree?: string;
   branch?: string;
+  yolo?: boolean;
   spawned_at?: string;
   spawns?: number;
   restarts_since_human?: number;
   killed_at?: string;
+  /** Watcher bookkeeping: a parked-at-prompt note was sent this park. */
+  park_noted?: boolean;
+  /** Watcher bookkeeping: the breaker-tripped note was sent this outage. */
+  breaker_noted?: boolean;
 }
 
 export interface Team {

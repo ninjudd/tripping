@@ -29,18 +29,32 @@ const ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 let lastTime = 0;
 let lastRandom: number[] = [];
 
+const freshRandom = () =>
+  Array.from({ length: 16 }, () => Math.floor(Math.random() * 32));
+
 /** Sortable id: lexicographic order is time order, monotonic in-process. */
 export function newId(now = Date.now()): string {
   let random: number[];
-  if (now === lastTime) {
-    // Same millisecond: increment the previous randomness so order holds.
+  if (now <= lastTime) {
+    // Same millisecond, or a clock that stepped backwards: stay at lastTime
+    // and increment the previous randomness so order holds regardless.
+    now = lastTime;
     random = [...lastRandom];
+    let carried = true;
     for (let i = random.length - 1; i >= 0; i--) {
-      if (++random[i] < 32) break;
+      if (++random[i] < 32) {
+        carried = false;
+        break;
+      }
       random[i] = 0;
     }
+    if (carried) {
+      // Suffix overflowed: carry into the time component instead of wrapping.
+      now = lastTime + 1;
+      random = freshRandom();
+    }
   } else {
-    random = Array.from({ length: 16 }, () => Math.floor(Math.random() * 32));
+    random = freshRandom();
   }
   lastTime = now;
   lastRandom = random;

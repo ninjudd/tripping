@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, readdirSync, readFileSync, existsSync } from "fs";
+import { mkdtempSync, rmSync, readdirSync, readFileSync, existsSync, writeFileSync, mkdirSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { newId, makeMessage } from "../src/team/envelope.js";
@@ -71,8 +71,8 @@ describe("read", () => {
   it("claims tasks into working/, archives everything else", () => {
     const task = send(TEAM, { from: "c", to: "w1", kind: "task", subject: "do", body: "" }).message;
     const note = send(TEAM, { from: "c", to: "w1", kind: "note", subject: "fyi", body: "" }).message;
-    const results = read(TEAM, "w1");
-    expect(results.map((r) => r.disposition)).toEqual(["claimed", "archived"]);
+    const { messages } = read(TEAM, "w1");
+    expect(messages.map((r) => r.disposition)).toEqual(["claimed", "archived"]);
     expect(readdirSync(workingDir(TEAM, "w1"))).toEqual([`${task.id}.json`]);
     expect(readdirSync(archiveDir(TEAM, "w1"))).toEqual([`${note.id}.json`]);
     expect(readdirSync(inboxDir(TEAM, "w1"))).toEqual([]);
@@ -81,12 +81,12 @@ describe("read", () => {
   it("returns messages in id (time) order", () => {
     const first = send(TEAM, { from: "c", to: "w1", kind: "note", subject: "1", body: "" }).message;
     const second = send(TEAM, { from: "c", to: "w1", kind: "note", subject: "2", body: "" }).message;
-    expect(read(TEAM, "w1").map((r) => r.message.id)).toEqual([first.id, second.id]);
+    expect(read(TEAM, "w1").messages.map((r) => r.message.id)).toEqual([first.id, second.id]);
   });
   it("non-task mail is at-most-once: a second read sees nothing", () => {
     send(TEAM, { from: "c", to: "w1", kind: "answer", subject: "", body: "" });
-    expect(read(TEAM, "w1")).toHaveLength(1);
-    expect(read(TEAM, "w1")).toHaveLength(0);
+    expect(read(TEAM, "w1").messages).toHaveLength(1);
+    expect(read(TEAM, "w1").messages).toHaveLength(0);
   });
 });
 
@@ -157,6 +157,71 @@ describe("peek and wait", () => {
     const p = wait(TEAM, "w1", 5000, 50);
     setTimeout(() => send(TEAM, { from: "c", to: "w1", kind: "note", subject: "", body: "" }), 120);
     expect(await p).toBe(1);
+  });
+});
+
+describe("review findings", () => {
+  it("a task dispatched into an existing thread still closes by thread", () => {
+    const { message: task } = send(TEAM, {
+      from: "c", to: "w1", kind: "task", subject: "follow-up", body: "", thread: "01EXISTING",
+    });
+    expect(task.thread).toBe("01EXISTING");
+    read(TEAM, "w1"); // claims working/<task.id>.json, filename != thread
+    const { close } = send(TEAM, {
+      from: "w1", to: "c", kind: "result", subject: "", body: "", thread: "01EXISTING",
+    });
+    expect(close?.closed).toBe(task.id);
+    expect(readdirSync(workingDir(TEAM, "w1"))).toEqual([]);
+  });
+  it("an unmatched --thread warns and lists what is in flight", () => {
+    const { message: task } = send(TEAM, { from: "c", to: "w1", kind: "task", subject: "", body: "" });
+    read(TEAM, "w1");
+    const { close } = send(TEAM, {
+      from: "w1", to: "c", kind: "result", subject: "", body: "", thread: "01TYPO",
+    });
+    expect(close?.closed).toBeUndefined();
+    expect(close?.warning).toMatch(/matches no task/);
+    expect(close?.inFlight).toEqual([task.id]);
+  });
+  it("fallback close stamps the result's envelope with the task's thread", () => {
+    const { message: task } = send(TEAM, { from: "c", to: "w1", kind: "task", subject: "", body: "" });
+    read(TEAM, "w1");
+    const { message: result, close } = send(TEAM, {
+      from: "w1", to: "c", kind: "result", subject: "", body: "",
+    });
+    expect(close?.closed).toBe(task.id);
+    expect(result.thread).toBe(task.thread); // envelope and close agree
+    const delivered = read(TEAM, "c").messages[0].message;
+    expect(delivered.thread).toBe(task.thread);
+  });
+  it("a poison inbox file is quarantined to dead/ and never bricks read", () => {
+    send(TEAM, { from: "c", to: "w1", kind: "note", subject: "good", body: "" });
+    writeFileSync(join(inboxDir(TEAM, "w1"), "00000000000000000000000000.json"), "not json{");
+    const { messages, quarantined } = read(TEAM, "w1");
+    expect(messages).toHaveLength(1);
+    expect(quarantined).toEqual(["00000000000000000000000000.json"]);
+    expect(readdirSync(join(root, TEAM, "agents", "w1", "dead"))).toEqual([
+      "00000000000000000000000000.json",
+    ]);
+    expect(read(TEAM, "w1").quarantined).toEqual([]);
+  });
+  it("peek reports unreadable files without moving them", () => {
+    mkdirSync(inboxDir(TEAM, "w1"), { recursive: true });
+    writeFileSync(join(inboxDir(TEAM, "w1"), "00000000000000000000000000.json"), "junk");
+    const { unreadable } = peek(TEAM, "w1");
+    expect(unreadable).toHaveLength(1);
+    expect(readdirSync(inboxDir(TEAM, "w1"))).toHaveLength(1);
+  });
+  it("ids stay monotonic when the clock steps backwards", () => {
+    const a = newId(5000);
+    const b = newId(4000); // clock went backwards
+    const c = newId(6000);
+    expect(b > a).toBe(true);
+    expect(c > b).toBe(true);
+  });
+  it("mailbox functions reject ids with path characters", () => {
+    expect(() => read(TEAM, "../w1")).toThrow(/invalid agent/);
+    expect(() => peek(TEAM, "a/b")).toThrow(/invalid agent/);
   });
 });
 

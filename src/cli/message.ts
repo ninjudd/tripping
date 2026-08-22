@@ -26,6 +26,10 @@ function identity(): { team: string; agent: string } {
   if (!agent) fail("TRIP_AGENT is not set. Run this inside a team session.");
   if (agent === RESERVED_SENDER)
     fail(`'${RESERVED_SENDER}' is a reserved sender and cannot use the CLI`);
+  if (!/^[A-Za-z0-9_-]+$/.test(team))
+    fail(`TRIP_TEAM '${team}' is not a valid team id (letters, digits, - and _ only)`);
+  if (!/^[A-Za-z0-9_-]+$/.test(agent))
+    fail(`TRIP_AGENT '${agent}' is not a valid agent id (letters, digits, - and _ only)`);
   return { team, agent };
 }
 
@@ -43,6 +47,8 @@ function parseFlags(argv: string[], takesValue: Set<string>): Flags {
       continue;
     }
     const name = arg.slice(2);
+    if (!takesValue.has(name))
+      fail(`unknown flag --${name}`);
     if (takesValue.has(name)) {
       const value = argv[++i];
       if (value === undefined) fail(`--${name} needs a value`);
@@ -93,6 +99,7 @@ async function main(): Promise<void> {
       if (!to) fail("usage: trip message send <to> --subject <s> [--kind k] [--thread t]  (body on stdin)");
       const kind = (flags.kind as string) ?? "note";
       if (!KINDS.includes(kind as Kind)) fail(`unknown kind '${kind}' (one of: ${KINDS.join(", ")})`);
+      if (flags.subject === undefined) fail("--subject is required");
       const body = await readStdin();
       const { message, close } = send(team, {
         from: agent,
@@ -111,18 +118,26 @@ async function main(): Promise<void> {
       return;
     }
     case "read": {
-      const results = read(team, agent);
-      if (results.length === 0) {
+      parseFlags(rest, new Set());
+      const { messages, quarantined } = read(team, agent);
+      if (quarantined.length > 0)
+        process.stderr.write(
+          `warning: quarantined ${quarantined.length} unreadable file(s) to dead/: ${quarantined.join(", ")} — inspect with cat\n`
+        );
+      if (messages.length === 0) {
         process.stdout.write("no new messages\n");
         return;
       }
-      for (const { message, disposition } of results) {
+      for (const { message, disposition } of messages) {
         show(message, disposition === "claimed" ? "claimed → working" : undefined);
       }
       return;
     }
     case "peek": {
-      const { unread, inFlight } = peek(team, agent);
+      parseFlags(rest, new Set());
+      const { unread, inFlight, unreadable } = peek(team, agent);
+      if (unreadable.length > 0)
+        process.stderr.write(`warning: ${unreadable.length} unreadable file(s) in inbox: ${unreadable.join(", ")}\n`);
       if (unread.length === 0) process.stdout.write("no new messages\n");
       for (const message of unread) show(message);
       if (inFlight.length > 0)

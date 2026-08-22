@@ -62,14 +62,19 @@ export function checkpointWorktree(
       /* nothing in progress */
     }
   }
-  git([
-    "add",
-    "-A",
-    "--",
-    ":(exclude).tripping",
-    ":(exclude)AGENTS.md",
-    ":(exclude)CLAUDE.md",
-  ]);
+  // tripping always owns .tripping/. The instruction files are its own only
+  // when it created them, and §7 step 2 creates them only when absent — so a
+  // tracked one is the repo's, and a teammate's edits to it belong in the
+  // checkpoint like any other work.
+  const excludes = [":(exclude).tripping"];
+  for (const f of ["AGENTS.md", "CLAUDE.md"]) {
+    try {
+      git(["ls-files", "--error-unmatch", "--", f]);
+    } catch {
+      excludes.push(`:(exclude)${f}`);
+    }
+  }
+  git(["add", "-A", "--", ...excludes]);
   try {
     git([
       "commit",
@@ -89,7 +94,10 @@ export function reclaimWorking(
   team: string,
   id: string,
   coordinator: string,
-  checkpointSha: string | null
+  checkpointSha: string | null,
+  /** terminal: the teammate is not coming back (the §16 breaker gave up on
+   *  it), so re-delivery is pointless and every held task dead-letters. */
+  opts: { terminal?: boolean } = {}
 ): void {
   const lines = readBus(team);
   for (const { file, message } of workingEntries(team, id)) {
@@ -114,7 +122,7 @@ export function reclaimWorking(
     const attempts = lines.filter(
       (l) => l.event === "redeliver" && l.id === taskId
     ).length;
-    if (attempts >= REDELIVERY_CAP) {
+    if (opts.terminal || attempts >= REDELIVERY_CAP) {
       mkdirSync(deadDir(team, id), { recursive: true });
       renameSync(
         join(workingDir(team, id), file),
@@ -128,7 +136,9 @@ export function reclaimWorking(
         to: coordinator,
         kind: "result",
         thread,
-        subject: `task failed: ${id} died ${attempts + 1} times holding it`,
+        subject: opts.terminal
+          ? `task failed: ${id} is down for good — crash-loop breaker tripped`
+          : `task failed: ${id} died ${attempts + 1} times holding it`,
         body:
           `Task ${taskId} is dead-lettered in agents/${id}/dead/. ` +
           `Revive it with: trip team requeue ${id} ${taskId} — or re-dispatch ` +

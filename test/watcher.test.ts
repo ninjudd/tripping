@@ -8,7 +8,7 @@ import { join } from "path";
 import { execFileSync } from "child_process";
 import { initTeam, spawnTeammate } from "../src/team/spawn.js";
 import { respawnTeammate, REDELIVERY_CAP, checkpointWorktree } from "../src/team/respawn.js";
-import { sweepOnce, screenParked } from "../src/team/watcher.js";
+import { sweepOnce, screenParked, PARK_ESCALATE_AFTER } from "../src/team/watcher.js";
 import { dispatchTasks, awaitResults, joinFailed } from "../src/team/dispatch.js";
 import { readTeam, writeTeam } from "../src/team/roster.js";
 import { send, read, readBus, requeueMessage, workingEntries } from "../src/team/mailbox.js";
@@ -175,6 +175,23 @@ describe("respawn sequence (§15)", () => {
     expect(shown).not.toContain("AGENTS.md");
     expect(shown).not.toContain(".tripping");
   });
+  it("checkpoints an edit to the repo's own AGENTS.md — only tripping's is excluded", async () => {
+    // §15 step 4's qualifier: excluded "when tripping wrote them". A tracked
+    // AGENTS.md is the repo's, and editing it may be the teammate's whole task.
+    writeFileSync(join(repo, "AGENTS.md"), "the repo's own contract\n");
+    execFileSync("git", ["-C", repo, "add", "AGENTS.md"]);
+    execFileSync("git", ["-C", repo, "-c", "user.email=t@t", "-c", "user.name=t",
+      "commit", "-qm", "ship AGENTS.md"]);
+    initTeam(TEAM);
+    const { worktree } = await spawnTeammate(TEAM, "w1", { role: "w", worktree: true, cwd: repo });
+    writeFileSync(join(worktree!, "AGENTS.md"), "the repo's own contract, amended\n");
+    writeFileSync(join(worktree!, "CLAUDE.md"), "tripping wrote this one\n");
+    const sha = checkpointWorktree(worktree!, "w1", 2);
+    expect(sha).toBeTruthy();
+    const shown = execFileSync("git", ["-C", worktree!, "show", "--stat", "--name-only", sha!], { encoding: "utf8" });
+    expect(shown).toContain("AGENTS.md");
+    expect(shown).not.toContain("CLAUDE.md");
+  });
 });
 
 describe("watcher sweep (§12/§8)", () => {
@@ -195,6 +212,60 @@ describe("watcher sweep (§12/§8)", () => {
     const before = readdirSync(inboxDir(TEAM, "coordinator")).length;
     await sweepOnce(TEAM); // second pass: no new note
     expect(readdirSync(inboxDir(TEAM, "coordinator")).length).toBe(before);
+  });
+  it("breaker at the cap: held tasks dead-letter so the join fails fast", async () => {
+    initTeam(TEAM);
+    await spawnTeammate(TEAM, "w1", { role: "r", cwd: repo });
+    const [task] = dispatchTasks(TEAM, "coordinator", [
+      { to: "w1", subject: "held", body: "" },
+    ]);
+    read(TEAM, "w1"); // claimed into working/
+    const roster = readTeam(TEAM)!;
+    roster.agents["w1"].restarts_since_human = roster.limits.max_respawns;
+    writeTeam(TEAM, roster);
+    markDead("t-w1");
+
+    expect((await sweepOnce(TEAM)).join()).toContain("dead-lettered");
+    expect(workingEntries(TEAM, "w1")).toHaveLength(0);
+    expect(readdirSync(deadDir(TEAM, "w1"))).toHaveLength(1);
+    expect(readBus(TEAM).some((l) => l.event === "dead_letter")).toBe(true);
+
+    // The point of the park mail: it rides the task's own thread, so the
+    // join returns failure instead of running out an hour-long timeout.
+    const { done, pending } = await awaitResults(TEAM, [task], {
+      timeoutMs: 3000,
+      pollMs: 100,
+    });
+    expect(pending).toHaveLength(0);
+    expect(done.filter(joinFailed)).toHaveLength(1);
+
+    await sweepOnce(TEAM); // idempotent: working/ is already empty
+    expect(readdirSync(deadDir(TEAM, "w1"))).toHaveLength(1);
+  });
+  it("a respawn survives another teammate's flag write in the same sweep", async () => {
+    initTeam(TEAM);
+    await spawnTeammate(TEAM, "a", { role: "r", cwd: repo });
+    await spawnTeammate(TEAM, "b", { role: "r", cwd: repo });
+    // a is dead and will be respawned; b is alive, idle, parked, and holding
+    // mail, so its park_noted write fires later in the same loop.
+    markDead("t-a");
+    setLog("t-b", [
+      { type: "agent_session_start", t: now() + 1, continuation: "x" },
+      { type: "agent_turn_end", t: now() + 2 },
+    ]);
+    setScreen("t-b", "Do you want to proceed?\n❯ 1. Yes\n  2. No");
+    send(TEAM, { from: "coordinator", to: "b", kind: "note", subject: "hi", body: "" });
+    const beforeSpawnedAt = readTeam(TEAM)!.agents["a"].spawned_at;
+
+    const actions = await sweepOnce(TEAM);
+    expect(actions.join()).toContain("a: dead session — respawned");
+    expect(actions.join()).toContain("b: parked");
+
+    const a = readTeam(TEAM)!.agents["a"];
+    expect(a.spawned_at).not.toBe(beforeSpawnedAt); // the respawn's value stands
+    expect(a.spawns).toBe(2);
+    expect(a.restarts_since_human).toBe(1);
+    expect(readTeam(TEAM)!.agents["b"].park_noted).toBe(true);
   });
   it("a result after the respawn resets the breaker", async () => {
     await liveTeammate();
@@ -234,6 +305,20 @@ describe("watcher sweep (§12/§8)", () => {
     await sweepOnce(TEAM);
     expect(readTeam(TEAM)!.agents["w1"].park_noted).toBeUndefined();
     expect(calls()).toContain("SEND t-w1 New message");
+  });
+  it("escalates a park that has swallowed too many doorbells", async () => {
+    await liveTeammate();
+    setLog("t-w1", [
+      { type: "agent_session_start", t: now() + 1, continuation: "x" },
+      { type: "agent_turn_end", t: now() + 2 },
+    ]);
+    setScreen("t-w1", "Do you want to proceed?\n❯ 1. Yes\n  2. No");
+    send(TEAM, { from: "coordinator", to: "w1", kind: "note", subject: "hi", body: "" });
+    for (let i = 0; i <= PARK_ESCALATE_AFTER; i++) await sweepOnce(TEAM);
+    const notes = read(TEAM, "coordinator").messages.map((m) => m.message.subject);
+    expect(notes.filter((s) => s.includes("parked at a permission prompt"))).toHaveLength(1);
+    expect(notes.filter((s) => s.includes("mail is stranded"))).toHaveLength(1);
+    expect(readTeam(TEAM)!.agents["w1"].park_escalated).toBe(true);
   });
   it("nudges an idle teammate holding a task — never reclaims", async () => {
     await liveTeammate();
@@ -289,15 +374,39 @@ describe("requeue", () => {
 });
 
 describe("screen guard", () => {
-  it("errs toward not injecting on each signature", () => {
+  it("reads a real prompt as parked", () => {
     for (const text of [
-      "Do you want to proceed?", "Allow Bash to run this?", "Approve this action",
-      "continue? y/n", "Yes, and don't ask again",
+      "Do you want to proceed?\n❯ 1. Yes\n  2. No",
+      "Allow Bash to run this?\n❯ 1. Yes\n  2. No, tell Claude what to do",
+      "Approve this action?\n❯ 1. Yes\n  2. No",
+      "continue? y/n",
+      "Yes, and don't ask again for rm in this project",
+      "Apply this patch? [y/N]",
     ]) {
       setScreen("t-x", text);
-      expect(screenParked("t-x")).toBe(true);
+      expect(screenParked("t-x"), text).toBe(true);
     }
-    setScreen("t-x", "$ npm test\nall passing");
+  });
+  it("does not read ordinary agent output as parked", () => {
+    // Prose about approving is what teammates write all day; a false positive
+    // here strands the mail permanently, because an idle screen never changes.
+    for (const text of [
+      "$ npm test\nall passing",
+      "I reviewed the PR and left a comment asking them to approve the change.",
+      "Done. The CI job will allow deploys to production once green.",
+      "Summary: 3 files changed. Next: ask the reviewer to approve.",
+      '> git commit -m "allow admins to bypass the cache"',
+    ]) {
+      setScreen("t-x", text);
+      expect(screenParked("t-x"), text).toBe(false);
+    }
+  });
+  it("reads only the tail — the same words in scrollback are not a prompt", () => {
+    const scrollback = Array.from(
+      { length: 30 },
+      (_, i) => `line ${i}: nothing to see`
+    );
+    setScreen("t-x", ["Do you want to proceed?", ...scrollback].join("\n"));
     expect(screenParked("t-x")).toBe(false);
   });
 });

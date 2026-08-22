@@ -17,10 +17,12 @@ export function sessionName(team: string, id: string): string {
  *  `trip message wait`. The tool name is Bash for Claude with the command
  *  in input; Codex records shell as custom_tool_call, which trip's parser
  *  currently drops, so waiting is derivable for Claude only. */
+const WAIT_COMMAND = /\btrip(?:-message|-msg)?\s+(?:message\s+|msg\s+)?wait\b/;
+
 function isMessageWaitCall(event: TripEvent): boolean {
-  if (event.type !== "agent_tool_call") return false;
-  const input = JSON.stringify(event.input ?? "");
-  return input.includes("trip message wait") || input.includes("trip-message wait");
+  if (event.type !== "agent_tool_call" || event.name !== "Bash") return false;
+  const command = (event.input as { command?: unknown } | undefined)?.command;
+  return typeof command === "string" && WAIT_COMMAND.test(command);
 }
 
 export function deriveStatus(team: string, id: string): Status {

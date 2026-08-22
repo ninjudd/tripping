@@ -8,7 +8,7 @@ import { join } from "path";
 import { execFileSync } from "child_process";
 import {
   initTeam, checkSpawn, spawnTeammate, killTeammate, engineCommand,
-  verifyAgentRegistration,
+  verifyAgentRegistration, sessionAlive,
 } from "../src/team/spawn.js";
 import { readTeam, writeTeam, DEFAULT_LIMITS } from "../src/team/roster.js";
 import { deriveStatus } from "../src/team/status.js";
@@ -24,6 +24,8 @@ let savedPath: string;
 let savedAgent: string | undefined;
 
 function writeStub(kind = "claude"): void {
+  // Mirrors real trip: kill leaves the session directory in place (the log
+  // outlives the session); ls -a is the only liveness source.
   const stub = `#!/bin/sh
 echo "$@" >> "${stubDir}/calls.log"
 case "$1" in
@@ -32,14 +34,31 @@ case "$1" in
     : > "${sessions}/$2/log.jsonl"
     printf '{"kind":"${kind}","log_path":"/fake/transcript.jsonl"}\\n' > "${sessions}/$2/agent.json"
     env | grep -E '^TRIP_(TEAM|AGENT)=' >> "${stubDir}/calls.log"
+    echo "$2" >> "${stubDir}/live.txt"
     ;;
   kill)
-    if [ -d "${sessions}/$2" ]; then rm -rf "${sessions}/$2"; else echo "session not found" >&2; exit 1; fi
+    if grep -qx "$2" "${stubDir}/live.txt" 2>/dev/null; then
+      grep -vx "$2" "${stubDir}/live.txt" > "${stubDir}/live.tmp" || true
+      mv "${stubDir}/live.tmp" "${stubDir}/live.txt"
+    else
+      echo "session not found" >&2; exit 1
+    fi
+    ;;
+  ls)
+    cat "${stubDir}/live.txt" 2>/dev/null || true
     ;;
 esac
 `;
   writeFileSync(join(stubDir, "trip"), stub);
   chmodSync(join(stubDir, "trip"), 0o755);
+}
+
+function markDead(session: string): void {
+  const live = join(stubDir, "live.txt");
+  if (existsSync(live)) {
+    const rest = readFileSync(live, "utf8").split("\n").filter((l) => l && l !== session);
+    writeFileSync(live, rest.join("\n") + (rest.length ? "\n" : ""));
+  }
 }
 
 beforeEach(() => {
@@ -117,6 +136,7 @@ describe("init and step-0 checks (§16)", () => {
     const roster = initTeam(TEAM);
     roster.agents["w1"] = { role: "r", engine: "claude", session: "t-w1", cwd: "/" };
     writeTeam(TEAM, roster);
+    appendFileSync(join(stubDir, "live.txt"), "t-w1\n"); // daemon agrees: live
     expect(() => checkSpawn(TEAM, "w1")).toThrow(/kill first|already live/);
     roster.agents["w1"].killed_at = new Date().toISOString();
     writeTeam(TEAM, roster);
@@ -134,8 +154,8 @@ describe("init and step-0 checks (§16)", () => {
   });
   it("team start's coordinator spawn passes the gate the alias refuses", () => {
     initTeam(TEAM);
-    expect(() => checkSpawn(TEAM, "coordinator", true)).not.toThrow();
-    expect(() => checkSpawn(TEAM, "someone-else", true)).toThrow(/coordinator's id/);
+    expect(() => checkSpawn(TEAM, "coordinator", { asCoordinator: true })).not.toThrow();
+    expect(() => checkSpawn(TEAM, "someone-else", { asCoordinator: true })).toThrow(/coordinator's id/);
   });
   it("the coordinator spawn is exempt from the teammate cap", () => {
     const roster = initTeam(TEAM);
@@ -143,7 +163,7 @@ describe("init and step-0 checks (§16)", () => {
       roster.agents[`w${i}`] = { role: "r", engine: "claude", session: `t-w${i}`, cwd: "/" };
     }
     writeTeam(TEAM, roster);
-    expect(() => checkSpawn(TEAM, "coordinator", true)).not.toThrow();
+    expect(() => checkSpawn(TEAM, "coordinator", { asCoordinator: true })).not.toThrow();
   });
 });
 
@@ -200,8 +220,18 @@ describe("kill (§16)", () => {
     await spawnTeammate(TEAM, "w1", { role: "r", cwd: repo });
     killTeammate(TEAM, "w1");
     expect(readTeam(TEAM)!.agents["w1"].killed_at).toBeTruthy();
+    // the log outlives the session — kill never removes the directory
+    expect(existsSync(join(sessions, "t-w1", "log.jsonl"))).toBe(true);
     killTeammate(TEAM, "w1"); // stub kill now errors; stamping is the recovery
     expect(readTeam(TEAM)!.agents["w1"].killed_at).toBeTruthy();
+  });
+  it("only 'session not found' is tolerated; other kill failures rethrow", async () => {
+    initTeam(TEAM);
+    await spawnTeammate(TEAM, "w1", { role: "r", cwd: repo });
+    writeFileSync(join(stubDir, "trip"), "#!/bin/sh\necho daemon exploded >&2; exit 1\n");
+    chmodSync(join(stubDir, "trip"), 0o755);
+    expect(() => killTeammate(TEAM, "w1")).toThrow(/daemon exploded/);
+    expect(readTeam(TEAM)!.agents["w1"].killed_at).toBeUndefined();
   });
 });
 
@@ -277,6 +307,124 @@ describe("status derivation (§6)", () => {
       { type: "agent_text", t: now - 5, text: "busy" },
     ]);
     expect(deriveStatus(TEAM, "w1")).toBe("working");
+  });
+});
+
+describe("liveness and recreate (§17)", () => {
+  it("sessionAlive comes from trip ls, not the filesystem", async () => {
+    initTeam(TEAM);
+    await spawnTeammate(TEAM, "w1", { role: "r", cwd: repo });
+    expect(sessionAlive("t-w1")).toBe(true);
+    markDead("t-w1"); // crash: daemon reaped it, directory remains
+    expect(existsSync(join(sessions, "t-w1"))).toBe(true);
+    expect(sessionAlive("t-w1")).toBe(false);
+  });
+  it("a dead session with a live roster row passes the already-live gate", async () => {
+    initTeam(TEAM);
+    await spawnTeammate(TEAM, "w1", { role: "r", cwd: repo });
+    expect(() => checkSpawn(TEAM, "w1")).toThrow(/already live/);
+    markDead("t-w1");
+    expect(() => checkSpawn(TEAM, "w1")).not.toThrow();
+    // and the respawn kills the held name first, tolerating not-found
+    await spawnTeammate(TEAM, "w1", { role: "r", cwd: repo });
+    expect(readTeam(TEAM)!.agents["w1"].spawns).toBe(2);
+  });
+});
+
+describe("crash-loop breaker (§16)", () => {
+  it("auto respawns increment the counter and trip the breaker", async () => {
+    initTeam(TEAM);
+    await spawnTeammate(TEAM, "w1", { role: "r", cwd: repo });
+    for (let i = 0; i < DEFAULT_LIMITS.max_respawns; i++) {
+      markDead("t-w1");
+      await spawnTeammate(TEAM, "w1", { role: "r", cwd: repo, auto: true });
+    }
+    expect(readTeam(TEAM)!.agents["w1"].restarts_since_human).toBe(3);
+    markDead("t-w1");
+    await expect(
+      spawnTeammate(TEAM, "w1", { role: "r", cwd: repo, auto: true })
+    ).rejects.toThrow(/crashed 3x.*trip log t-w1/s);
+  });
+  it("a deliberate spawn resets the breaker", async () => {
+    initTeam(TEAM);
+    await spawnTeammate(TEAM, "w1", { role: "r", cwd: repo });
+    markDead("t-w1");
+    await spawnTeammate(TEAM, "w1", { role: "r", cwd: repo, auto: true });
+    expect(readTeam(TEAM)!.agents["w1"].restarts_since_human).toBe(1);
+    markDead("t-w1");
+    await spawnTeammate(TEAM, "w1", { role: "r", cwd: repo }); // human touch
+    expect(readTeam(TEAM)!.agents["w1"].restarts_since_human).toBe(0);
+  });
+});
+
+describe("hand-built and corrupt team.json (§16, §7 step 0)", () => {
+  it("a corrupt file refuses naming the path and recovery", () => {
+    initTeam(TEAM);
+    writeFileSync(join(process.env.TRIP_TEAMS_DIR!, TEAM, "team.json"), "{nope");
+    expect(() => checkSpawn(TEAM, "w1")).toThrow(/corrupt.*trip team init/s);
+  });
+  it("a hand-built file missing limits gets defaults written back", () => {
+    initTeam(TEAM);
+    writeFileSync(
+      join(process.env.TRIP_TEAMS_DIR!, TEAM, "team.json"),
+      JSON.stringify({ coordinator: "coordinator", agents: {} })
+    );
+    const roster = readTeam(TEAM)!;
+    expect(roster.limits).toEqual(DEFAULT_LIMITS);
+    // and it was persisted, not just defaulted in memory
+    expect(JSON.parse(readFileSync(join(process.env.TRIP_TEAMS_DIR!, TEAM, "team.json"), "utf8")).limits)
+      .toEqual(DEFAULT_LIMITS);
+  });
+  it("init validates the coordinator id", () => {
+    expect(() => initTeam("t9", { coordinator: "a.b" })).toThrow(/invalid/);
+  });
+});
+
+describe("engine validation and refusal audit", () => {
+  it("an unknown engine is refused before any side effect", async () => {
+    initTeam(TEAM);
+    await expect(
+      spawnTeammate(TEAM, "w1", { role: "r", cwd: repo, engine: "Claude" as never })
+    ).rejects.toThrow(/unknown engine/);
+  });
+  it("refusals land in bus.jsonl", () => {
+    initTeam(TEAM);
+    process.env.TRIP_AGENT = "w1";
+    expect(() => checkSpawn(TEAM, "w2")).toThrow();
+    delete process.env.TRIP_AGENT;
+    const bus = readFileSync(join(process.env.TRIP_TEAMS_DIR!, TEAM, "bus.jsonl"), "utf8");
+    expect(bus).toContain('"event":"spawn_refused"');
+  });
+});
+
+describe("waiting matcher (§6)", () => {
+  it("does not fire on a non-Bash tool whose input quotes the loop", () => {
+    initTeam(TEAM);
+    const roster = readTeam(TEAM)!;
+    roster.agents["w1"] = { role: "r", engine: "claude", session: "t-w1", cwd: "/" };
+    writeTeam(TEAM, roster);
+    const now = Math.floor(Date.now() / 1000);
+    mkdirSync(join(sessions, "t-w1"), { recursive: true });
+    writeFileSync(join(sessions, "t-w1", "log.jsonl"), [
+      JSON.stringify({ type: "agent_session_start", t: now - 100, continuation: "x" }),
+      JSON.stringify({ type: "agent_tool_call", t: now - 5, id: "c1", name: "Write",
+        input: { path: "doc.md", content: "then run trip message wait" } }),
+    ].join("\n") + "\n");
+    expect(deriveStatus(TEAM, "w1")).toBe("working");
+  });
+  it("fires on the msg alias", () => {
+    initTeam(TEAM);
+    const roster = readTeam(TEAM)!;
+    roster.agents["w1"] = { role: "r", engine: "claude", session: "t-w1", cwd: "/" };
+    writeTeam(TEAM, roster);
+    const now = Math.floor(Date.now() / 1000);
+    mkdirSync(join(sessions, "t-w1"), { recursive: true });
+    writeFileSync(join(sessions, "t-w1", "log.jsonl"), [
+      JSON.stringify({ type: "agent_session_start", t: now - 100, continuation: "x" }),
+      JSON.stringify({ type: "agent_tool_call", t: now - 5, id: "c1", name: "Bash",
+        input: { command: "trip msg wait --timeout 550" } }),
+    ].join("\n") + "\n");
+    expect(deriveStatus(TEAM, "w1")).toBe("waiting");
   });
 });
 

@@ -9,6 +9,7 @@ import {
   writeFileSync,
   unlinkSync,
   symlinkSync,
+  appendFileSync,
 } from "fs";
 import { join } from "path";
 import { teamDir, validId } from "./paths.js";
@@ -48,11 +49,48 @@ export interface SpawnOptions {
 }
 
 function trip(args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): string {
-  return execFileSync("trip", args, {
-    encoding: "utf8",
-    cwd: opts.cwd,
-    env: opts.env ?? process.env,
-  });
+  try {
+    return execFileSync("trip", args, {
+      encoding: "utf8",
+      cwd: opts.cwd,
+      env: opts.env ?? process.env,
+      stdio: ["ignore", "pipe", "pipe"], // stderr lands on the error object
+    });
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error("trip is not on PATH — install trip, or check PATH");
+    }
+    throw err;
+  }
+}
+
+function tripErrorText(err: unknown): string {
+  const e = err as { stderr?: string | Buffer; message?: string };
+  return `${e.stderr ?? ""}${e.message ?? ""}`;
+}
+
+/** Liveness comes from trip's session list, never from files — the session
+ *  directory outlives every kill and crash (trip-primitives.md). Parsed
+ *  tolerantly: the name appearing as a token means alive. */
+export function sessionAlive(session: string): boolean {
+  let out: string;
+  try {
+    out = trip(["ls", "-a"]);
+  } catch {
+    return false; // no daemon, no sessions
+  }
+  const token = new RegExp(`(^|\\s)${session.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`, "m");
+  return token.test(out);
+}
+
+/** Tolerate exactly the error the primitives name; rethrow the rest. */
+function tripKillTolerant(session: string): void {
+  try {
+    trip(["kill", session]);
+  } catch (err: unknown) {
+    if (tripErrorText(err).includes("session not found")) return;
+    throw err;
+  }
 }
 
 /** §9: every launch carries an autonomy tier; there is no interactive tier. */
@@ -65,27 +103,45 @@ export function engineCommand(engine: Engine, yolo: boolean, prompt: string): st
     : ["codex", "--approve-for-me", prompt];
 }
 
-/** Step 0 (§7/§16): fail first, before any worktree or session exists. */
+export interface CheckOptions {
+  /** team start spawning the coordinator's own row (§17). */
+  asCoordinator?: boolean;
+  /** Set by the Phase 3 watcher; gates the §16 crash-loop breaker. */
+  auto?: boolean;
+}
+
+/** Step 0 (§7/§16): fail first, before any worktree or session exists.
+ *  Every refusal is audited to bus.jsonl when the team is readable. */
 export function checkSpawn(
   team: string,
   id: string,
-  asCoordinator = false
+  opts: CheckOptions = {}
 ): Team {
   const roster = readTeam(team);
+  const refuse = (reason: string): never => {
+    if (roster !== null) {
+      bus(team, {
+        event: "spawn_refused",
+        agent: id,
+        by: opts.auto ? "watcher" : process.env.TRIP_AGENT ?? "human",
+        reason,
+      });
+    }
+    throw new Error(reason);
+  };
   if (roster === null) {
     throw new Error(`no team.json for '${team}' — run: trip team init ${team}`);
   }
   const caller = process.env.TRIP_AGENT;
   if (caller && caller !== roster.coordinator) {
-    throw new Error(
+    refuse(
       `teammates cannot spawn or kill (v1). Ask the coordinator: trip message send coordinator --kind question`
     );
   }
-  if (!validId(id)) throw new Error(`invalid agent id: ${id}`);
-  if (asCoordinator) {
-    // team start spawning the coordinator's own row (§17).
+  if (!validId(id)) refuse(`invalid agent id: ${id}`);
+  if (opts.asCoordinator) {
     if (id !== roster.coordinator)
-      throw new Error(`the coordinator's id is '${roster.coordinator}'`);
+      refuse(`the coordinator's id is '${roster.coordinator}'`);
   } else if (
     id === RESERVED_SENDER ||
     id === "coordinator" ||
@@ -93,20 +149,32 @@ export function checkSpawn(
   ) {
     // The alias and the id that holds the role are both off-limits to
     // teammate spawns (§4); the reserved sender always is.
-    throw new Error(`'${id}' is reserved`);
+    refuse(`'${id}' is reserved`);
   }
   const existing = roster.agents[id];
-  if (existing && !existing.killed_at) {
-    throw new Error(
+  if (existing && !existing.killed_at && sessionAlive(sessionName(team, id))) {
+    // Alive means the daemon says so — a dead session with a live roster
+    // row is exactly the recreate case (§17), so it passes.
+    refuse(
       `'${id}' is already live — respawn requires a kill first: trip team kill ${id}`
     );
   }
-  if (!asCoordinator) {
+  if (opts.auto) {
+    const restarts = existing?.restarts_since_human ?? 0;
+    if (restarts >= roster.limits.max_respawns) {
+      refuse(
+        `'${id}' crashed ${restarts}x; leaving it down (limits.max_respawns). ` +
+          `Autopsy: trip log ${sessionName(team, id)}. ` +
+          `A deliberate trip team spawn resets the breaker.`
+      );
+    }
+  }
+  if (!opts.asCoordinator) {
     const live = Object.entries(roster.agents).filter(
       ([aid, row]) => aid !== roster.coordinator && !row.killed_at
     ).length;
-    if (live >= roster.limits.max_agents) {
-      throw new Error(
+    if (live >= roster.limits.max_agents && !(existing && !existing.killed_at)) {
+      refuse(
         `${live}/${roster.limits.max_agents} teammates live (limits.max_agents in ` +
           `~/.trip/teams/${team}/team.json). Free a slot: trip team kill <id>. ` +
           `Raising the cap is a human edit of team.json.`
@@ -133,6 +201,8 @@ export function initTeam(
   };
   if (roster.coordinator === RESERVED_SENDER)
     throw new Error(`'${RESERVED_SENDER}' is reserved`);
+  if (!validId(roster.coordinator))
+    throw new Error(`invalid coordinator id: ${roster.coordinator}`);
   writeTeam(team, roster);
   writeFileSync(protocolPath(team), protocolText(team));
   return roster;
@@ -175,6 +245,8 @@ export interface SpawnResult {
   cwd: string;
   worktree?: string;
   branch?: string;
+  /** §7 step 2: the one-line AGENTS.md reference the human may adopt. */
+  protocolReference?: string;
 }
 
 export async function spawnTeammate(
@@ -182,13 +254,20 @@ export async function spawnTeammate(
   id: string,
   opts: SpawnOptions
 ): Promise<SpawnResult> {
-  const roster = checkSpawn(team, id, !!opts.coordinator);
+  if (opts.engine && opts.engine !== "claude" && opts.engine !== "codex") {
+    throw new Error(`unknown engine '${opts.engine}' — use claude or codex`);
+  }
+  const roster = checkSpawn(team, id, {
+    asCoordinator: !!opts.coordinator,
+    auto: !!opts.auto,
+  });
   const engine: Engine = opts.engine ?? "claude";
   const session = sessionName(team, id);
   const repoCwd = opts.cwd ?? process.cwd();
 
   // Worktree for writer roles: wt/<id> in the team dir, branch team/<team>/<id>.
   let cwd = repoCwd;
+  let protocolReferenceNeeded = !opts.worktree; // worktree-less roles too
   let worktree: string | undefined;
   let branch: string | undefined;
   if (opts.worktree) {
@@ -205,15 +284,44 @@ export async function spawnTeammate(
     const dotDir = join(worktree, ".tripping");
     mkdirSync(dotDir, { recursive: true });
     writeFileSync(join(dotDir, "PROTOCOL.md"), protocolText(team));
+    // tripping never edits the repo's own files: create AGENTS.md/CLAUDE.md
+    // only when the repo ships none, exclude what it created from git so
+    // checkpoint commits cannot carry them into integration, and otherwise
+    // leave the printed reference (§7 step 2) to the human.
+    const excluded = [".tripping/"];
     const agentsMd = join(worktree, "AGENTS.md");
-    if (!existsSync(agentsMd)) writeFileSync(agentsMd, agentsMdText(team));
+    if (!existsSync(agentsMd)) {
+      writeFileSync(agentsMd, agentsMdText(team));
+      excluded.push("AGENTS.md");
+    } else {
+      protocolReferenceNeeded = true;
+    }
     const claudeMd = join(worktree, "CLAUDE.md");
-    if (!existsSync(claudeMd)) symlinkSync("AGENTS.md", claudeMd);
+    if (!existsSync(claudeMd)) {
+      symlinkSync("AGENTS.md", claudeMd);
+      excluded.push("CLAUDE.md");
+    }
+    try {
+      const excludePath = execFileSync(
+        "git",
+        ["-C", worktree, "rev-parse", "--git-path", "info/exclude"],
+        { encoding: "utf8" }
+      ).trim();
+      appendFileSync(excludePath, excluded.join("\n") + "\n");
+    } catch {
+      /* exclusion is best-effort; checkpoints still work without it */
+    }
     cwd = worktree;
   }
 
-  // Roster row before create: spawned_at first is what §6 derives from.
+  // A dead session with a live roster row is the recreate case: free the
+  // name first — trip create hard-errors on a held one (§15 step 3).
   const prior = roster.agents[id];
+  if (prior) tripKillTolerant(session);
+
+  // Roster row before create: spawned_at first is what §6 derives from.
+  // The breaker counter increments on the watcher's auto path and resets
+  // on a deliberate spawn — the reset IS the human/coordinator touch (§16).
   const row: AgentRow = {
     role: opts.role,
     engine,
@@ -222,7 +330,9 @@ export async function spawnTeammate(
     ...(worktree ? { worktree, branch } : {}),
     spawned_at: new Date().toISOString(),
     spawns: (prior?.spawns ?? 0) + 1,
-    restarts_since_human: 0,
+    restarts_since_human: opts.auto
+      ? (prior?.restarts_since_human ?? 0) + 1
+      : 0,
   };
   roster.agents[id] = row;
   writeTeam(team, roster);
@@ -244,7 +354,18 @@ export async function spawnTeammate(
   });
 
   await verifyAgentRegistration(session, engine, opts.registrationTimeoutMs);
-  return { id, session, cwd, worktree, branch };
+  return {
+    id,
+    session,
+    cwd,
+    worktree,
+    branch,
+    ...(protocolReferenceNeeded
+      ? {
+          protocolReference: `add to your AGENTS.md: Read ${protocolPath(team)} — the messaging contract for team ${team}`,
+        }
+      : {}),
+  };
 }
 
 /** Kill: trip kill first — the name frees at the daemon regardless of what
@@ -259,11 +380,7 @@ export function killTeammate(team: string, id: string): void {
     );
   }
   if (!roster.agents[id]) throw new Error(`'${id}' is not on the roster`);
-  try {
-    trip(["kill", sessionName(team, id)]);
-  } catch {
-    /* "session not found" — already dead; stamping is the recovery */
-  }
+  tripKillTolerant(sessionName(team, id));
   roster.agents[id].killed_at = new Date().toISOString();
   writeTeam(team, roster);
   bus(team, { event: "kill", agent: id, by: caller ?? "human" });

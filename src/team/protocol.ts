@@ -20,11 +20,15 @@ environment.
 ## The loop
 
 Start every session by running \`trip message read\`. When you finish a
-task, send \`trip message send coordinator --kind result --thread <the
-task's thread> --subject "..."\` with the body on stdin, written so a
-reader with no context can act on it. Then run \`trip message wait\` to
-block for your next message. Never end a turn without calling
-\`trip message wait\`.
+task, send the result with the body on stdin — every flag below is real,
+and --subject is required:
+
+    echo "what you did, self-contained" | trip message send coordinator \\
+      --kind result --thread <the task's thread> --subject "..."
+
+Write it so a reader with no context can act on it. Then run
+\`trip message wait\` to block for your next message. Never end a turn
+without calling \`trip message wait\`.
 
 ## Your memory
 
@@ -55,11 +59,12 @@ export function teammatePrompt(team: string, id: string, role: string, protocolR
   return `You are ${id}, a teammate on team ${team}. Your role: ${role}
 
 Read ${protocolRef} for the messaging contract. Start by running
-\`trip message read\`. When you finish a task, \`trip message send
-coordinator --kind result --thread <the task's thread>\` describing what
-you did so a reader with no context can act on it, then run
-\`trip message wait\` to block for your next message. Never end a turn
-without calling \`trip message wait\`.`;
+\`trip message read\`. When you finish a task, send the result — body on
+stdin, --subject required:
+\`echo "..." | trip message send coordinator --kind result --thread <the
+task's thread> --subject "..."\` — written so a reader with no context
+can act on it. Then run \`trip message wait\` to block for your next
+message. Never end a turn without calling \`trip message wait\`.`;
 }
 
 export function coordinatorPrompt(team: string, coordinatorId: string): string {
@@ -68,9 +73,10 @@ export function coordinatorPrompt(team: string, coordinatorId: string): string {
 Read ${"~/.trip/teams/" + team + "/PROTOCOL.md"} for the messaging contract.
 You direct the team: spawn teammates with \`trip team spawn <id> --role
 "..." [--engine claude|codex] [--worktree]\`, see them with \`trip team
-ls\`, and dispatch work with \`trip message send <id> --kind task\` —
-write every task self-contained, referencing prior work by thread id,
-never assumed recall. Collect results with \`trip message read\` and
+ls\`, and dispatch work with the body on stdin —
+\`echo "..." | trip message send <id> --kind task --subject "..."\` —
+every task self-contained, referencing prior work by thread id, never
+assumed recall. Collect results with \`trip message read\` and
 block between rounds with \`trip message wait\`. Teammates address you as
 coordinator. Team limits live in ~/.trip/teams/${team}/team.json.`;
 }

@@ -10,13 +10,13 @@ import {
   initTeam,
   spawnTeammate,
   killTeammate,
+  sessionAlive,
   Engine,
 } from "../team/spawn.js";
 import { readTeam } from "../team/roster.js";
 import { deriveStatus, sessionName } from "../team/status.js";
 import { inboxDir, workingDir, deadDir } from "../team/paths.js";
 import { coordinatorPrompt } from "../team/protocol.js";
-import { sessionDir as sessionLogDir } from "../trip/log.js";
 
 function fail(message: string): never {
   process.stderr.write(`trip team: ${message}\n`);
@@ -48,6 +48,19 @@ function parseFlags(argv: string[], takesValue: Set<string>, booleans: Set<strin
     }
   }
   return out;
+}
+
+function engineFlag(flags: Flags): Engine | undefined {
+  const engine = flags.engine as string | undefined;
+  if (engine === undefined) return undefined;
+  if (engine !== "claude" && engine !== "codex")
+    fail(`unknown engine '${engine}' — use --engine claude|codex`);
+  return engine;
+}
+
+function checkLaunched(result: { error?: Error; status: number | null }): never {
+  if (result.error) fail("trip is not on PATH — install trip, or check PATH");
+  process.exit(result.status ?? 0);
 }
 
 function teamFromEnv(flags: Flags): string {
@@ -88,25 +101,27 @@ async function main(): Promise<void> {
       const coordinator = roster.coordinator;
       const session = sessionName(name, coordinator);
 
-      // Re-running start on a live team just attaches (§17).
-      const row = roster.agents[coordinator];
-      const alive = row && !row.killed_at && existsSync(sessionLogDir(session));
-      if (!alive) {
-        await spawnTeammate(name, coordinator, {
+      // Re-running start on a live team just attaches; a dead coordinator
+      // session recreates (§17). Liveness comes from trip's session list —
+      // the session directory outlives every crash, so file existence
+      // proves nothing (trip-primitives.md).
+      if (!sessionAlive(session)) {
+        const result = await spawnTeammate(name, coordinator, {
           role: "coordinator",
-          engine: (flags.engine as Engine) ?? "claude",
+          engine: engineFlag(flags) ?? "claude",
           yolo: !!flags.yolo,
           prompt: coordinatorPrompt(name, coordinator),
           coordinator: true,
           // The coordinator's cwd is wherever start ran (§17); no worktree.
         });
+        if (result.protocolReference)
+          process.stdout.write(`${result.protocolReference}\n`);
       }
       if (flags.detach) {
         process.stdout.write(`coordinator running: ${session} — attach with: trip attach ${session}\n`);
         return;
       }
-      const attach = spawnSync("trip", ["attach", session], { stdio: "inherit" });
-      process.exit(attach.status ?? 0);
+      checkLaunched(spawnSync("trip", ["attach", session], { stdio: "inherit" }));
     }
 
     case "spawn": {
@@ -117,7 +132,7 @@ async function main(): Promise<void> {
       const team = teamFromEnv(flags);
       const result = await spawnTeammate(team, id, {
         role: flags.role as string,
-        engine: (flags.engine as Engine) ?? "claude",
+        engine: engineFlag(flags) ?? "claude",
         worktree: !!flags.worktree,
         yolo: !!flags.yolo,
       });
@@ -126,6 +141,8 @@ async function main(): Promise<void> {
           (result.worktree ? ` in ${result.worktree} on ${result.branch}` : "") +
           "\n"
       );
+      if (result.protocolReference)
+        process.stdout.write(`${result.protocolReference}\n`);
       return;
     }
 
@@ -140,14 +157,23 @@ async function main(): Promise<void> {
         `team ${team} — ${live}/${roster.limits.max_agents} teammates live (limits: team.json)\n`
       );
       for (const [id, row] of rows) {
-        const status = row.killed_at ? "dead" : deriveStatus(team, id);
+        // §16: flag a roster/daemon mismatch — the roster says live but the
+        // daemon has no such session.
+        const gone = !row.killed_at && !sessionAlive(row.session);
+        const status = row.killed_at
+          ? "dead"
+          : gone
+            ? "gone?"
+            : deriveStatus(team, id);
         const age = row.spawned_at
           ? `${Math.round((Date.now() - Date.parse(row.spawned_at)) / 60000)}m`
           : "?";
         const mail = `${count(inboxDir(team, id))} in / ${count(workingDir(team, id))} held / ${count(deadDir(team, id))} dead`;
         process.stdout.write(
           `  ${id.padEnd(14)} ${row.engine.padEnd(6)} ${String(status).padEnd(8)} ` +
-            `age ${age.padEnd(7)} spawns ${String(row.spawns ?? 1).padEnd(3)} ${mail}  ${row.role}\n`
+            `age ${age.padEnd(7)} spawns ${String(row.spawns ?? 1).padEnd(3)} ${mail}  ${row.role}` +
+            (gone ? `  [session gone — trip team kill ${id}]` : "") +
+            "\n"
         );
       }
       return;
@@ -167,10 +193,11 @@ async function main(): Promise<void> {
       const id = flags.positional[0];
       if (!id) fail("usage: trip team watch <id>");
       const team = teamFromEnv(flags);
-      const watch = spawnSync("trip", ["log", sessionName(team, id), "--follow"], {
-        stdio: "inherit",
-      });
-      process.exit(watch.status ?? 0);
+      checkLaunched(
+        spawnSync("trip", ["log", sessionName(team, id), "--follow"], {
+          stdio: "inherit",
+        })
+      );
     }
 
     case "respawn":

@@ -789,6 +789,26 @@ two claims, two results, two closes. Afterwards both teammates derived
 `waiting` — §6's Claude-only status — so they were genuinely blocked in
 `trip message wait`, ready for another round rather than idle.
 
+**Task custody survives a real crash.** §15 is the most intricate sequence in
+the plan and the one hardest to trust from unit tests, so it was run against a
+live teammate: dispatch, wait for the claim, `trip kill` the session while it
+held the task, then one sweep. `bus.jsonl` records the whole recovery —
+
+```
+claim      w1  01M0M72ENVWX…
+redeliver  w1  01M0M72ENVWX…  attempt 1
+claim      w1  01M0M72ENVWX…
+```
+
+— and the fresh incarnation found two messages waiting: the restart notice,
+and the companion note telling it its predecessor died holding this task and
+to check `git log` before redoing work. It then re-claimed the task and
+carried on. Nothing was lost and nothing was duplicated.
+
+**Mixed engines are real.** A Claude teammate and a Codex teammate on one
+team, dispatched to together, both results joined in 34.6s. `trip team ls`
+shows `claude` and `codex` side by side and the bus does not distinguish them.
+
 **Five defects that the stub could not have surfaced.** Each is a case where
 the stub and reality disagreed, and the suite believed the stub:
 

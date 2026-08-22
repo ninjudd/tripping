@@ -11,6 +11,9 @@ export interface AgentRow {
   worktree?: string;
   branch?: string;
   yolo?: boolean;
+  /** Model and effort are per-teammate, replayed faithfully on respawn. */
+  model?: string;
+  effort?: string;
   spawned_at?: string;
   spawns?: number;
   restarts_since_human?: number;

@@ -123,6 +123,24 @@ describe("respawn sequence (§15)", () => {
     expect(calls()).toContain("bypassPermissions"); // yolo persisted
     expect(calls()).toContain("special role"); // role prompt regenerated
   });
+  it("replays model and effort on the restarted session", async () => {
+    initTeam(TEAM);
+    await spawnTeammate(TEAM, "w1", {
+      role: "writer",
+      cwd: repo,
+      model: "opus",
+      effort: "xhigh",
+    });
+    markDead("t-w1");
+    // Without this the spawn's own create line satisfies the assertion below
+    // and the test passes with the pass-through deleted.
+    clearCalls();
+    await respawnTeammate(TEAM, "w1");
+    const row = readTeam(TEAM)!.agents["w1"];
+    expect(row.model).toBe("opus");
+    expect(row.effort).toBe("xhigh");
+    expect(calls()).toContain("--model opus --effort xhigh");
+  });
   it("re-delivers a held task with a companion note, task first", async () => {
     await liveTeammate();
     send(TEAM, { from: "coordinator", to: "w1", kind: "task", subject: "do", body: "" });

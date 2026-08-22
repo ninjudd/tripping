@@ -94,8 +94,8 @@ hands it to `execve` (`session.rs:138`), which replaces the environment
 outright rather than inheriting the daemon's. `trip create` passes
 `terminal_env()`, which is the client process's full environment
 (`client/mod.rs:13`). So a session created by tripping inherits `PATH`,
-`HOME`, and credentials, and tripping can pass `TRIPPING_TEAM` and
-`TRIPPING_AGENT` by setting them on its own spawn.
+`HOME`, and credentials, and tripping can pass `TRIP_TEAM` and
+`TRIP_AGENT` by setting them on its own spawn.
 
 **`TRIP_SESSION` is always correct inside a session.** The daemon force-sets it
 to the session name and filters any inherited value out of the map first

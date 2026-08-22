@@ -106,6 +106,22 @@ const INHERITED_AGENT_MARKERS = [
   "CODEX_THREAD_ID",
 ];
 
+/** Everything an engine puts in the environment looks like one of these.
+ *  Used by the test that guards the list above against the day an engine
+ *  adds a tenth marker; not used to scrub, because plenty of what matches is
+ *  config a teammate genuinely needs. */
+export const AGENT_ENV_PATTERN = /^CLAUDE(CODE|_)|^CODEX_/;
+
+/** Matches AGENT_ENV_PATTERN and is deliberately inherited: it tells a
+ *  teammate where its own config and credentials live, which is not identity
+ *  and not the parent's session. */
+export const INHERITED_AGENT_CONFIG = [
+  "CLAUDE_CONFIG_DIR",
+  "CLAUDE_CODE_USE_BEDROCK",
+  "CLAUDE_CODE_USE_VERTEX",
+  "CODEX_HOME",
+];
+
 /** The environment a spawned teammate gets: the caller's, minus the caller's
  *  own agent identity, plus this teammate's. */
 export function teammateEnv(team: string, id: string): NodeJS.ProcessEnv {

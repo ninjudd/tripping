@@ -9,6 +9,7 @@ import { execFileSync } from "child_process";
 import {
   initTeam, checkSpawn, spawnTeammate, killTeammate, engineCommand,
   verifyAgentRegistration, sessionAlive, teammateEnv,
+  AGENT_ENV_PATTERN, INHERITED_AGENT_CONFIG,
 } from "../src/team/spawn.js";
 import { readTeam, writeTeam, DEFAULT_LIMITS } from "../src/team/roster.js";
 import { deriveStatus } from "../src/team/status.js";
@@ -204,6 +205,27 @@ describe("teammateEnv: the coordinator's own markers never reach a teammate", ()
       for (const k of Object.keys(process.env)) delete process.env[k];
       Object.assign(process.env, saved);
     }
+  });
+
+  it("leaves no agent variable of this real session unaccounted for", () => {
+    // The list in spawn.ts is hand-maintained over someone else's
+    // environment, and the test above can only check it against itself. This
+    // one checks it against reality: every CLAUDE*/CODEX_* variable actually
+    // present must be either scrubbed or a deliberate keep. When an engine
+    // adds a marker, this fails and someone decides which it is.
+    const present = Object.keys(process.env).filter((k) =>
+      AGENT_ENV_PATTERN.test(k)
+    );
+    if (present.length === 0) return; // not running inside an agent session
+    const env = teammateEnv("t", "w1");
+    const leaked = present.filter(
+      (k) => env[k] !== undefined && !INHERITED_AGENT_CONFIG.includes(k)
+    );
+    expect(
+      leaked,
+      `unaccounted agent variables — scrub them in INHERITED_AGENT_MARKERS, ` +
+        `or add them to INHERITED_AGENT_CONFIG if a teammate needs them`
+    ).toEqual([]);
   });
 });
 

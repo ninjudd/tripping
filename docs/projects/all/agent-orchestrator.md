@@ -469,7 +469,10 @@ claim — acceptable with both packages under one owner.
    never auto-reclaimed from a possibly-live incarnation. (A *dead* teammate
    that never sent its result is §15's ordinary re-delivery case.)
 4. **Proof.** A coordinator spawns two teammates, dispatches tasks, collects
-   results, and integrates the branches.
+   results, and integrates the branches. The first three are done and
+   recorded in §19; branch integration waits on the worktree siting question
+   [`later.md`](../later.md) raises, because a writer's worktree currently
+   lands where neither engine trusts it.
 
 ## 13. Open questions
 
@@ -763,3 +766,42 @@ directory and references from `AGENTS.md`, because that is what survives a
 compaction. Codex reads skills from its own directory rather than from a
 `--plugin-dir`, so today the skill reaches Claude teammates and the protocol
 reaches both.
+
+## 19. What the first real run proved, and what it cost
+
+Phases 1 to 3 were built against a `trip` stub, because no Rust toolchain
+existed on the development machine. Everything below is the first execution
+against a real trip, and it is recorded here because the gap between the two
+was the most productive thing in the project.
+
+**The loop works.** A coordinator dispatched two tasks to two Claude
+teammates; both read the bus, fixed their file, verified with `python3`, and
+answered on the right thread. `trip team dispatch --wait` joined both results
+in **32.5 seconds**, and `bus.jsonl` balanced exactly: two spawns, two tasks,
+two claims, two results, two closes. Afterwards both teammates derived
+`waiting` — §6's Claude-only status — so they were genuinely blocked in
+`trip message wait`, ready for another round rather than idle.
+
+**Five defects that the stub could not have surfaced.** Each is a case where
+the stub and reality disagreed, and the suite believed the stub:
+
+| Defect | Why the stub hid it |
+|---|---|
+| A teammate inherited the coordinator's `CLAUDE_CODE_CHILD_SESSION`, so it disabled its own transcript and could never register | the stub never modelled the caller's environment |
+| `trip on` was never run at all — no `SessionStart` hook exists by default | the stub wrote `agent.json` itself |
+| `trip on` from a hook registered Claude sessions as `codex`, so the wrong parser ran and logged zero agent events | the stub wrote the right `kind` |
+| `tripKillTolerant` matched `"session not found"`; trip prints `session 'name' not found`, so it rethrew on the one error it exists to swallow | the stub printed the unquoted form |
+| Codex records shell work as `custom_tool_call`, which trip's parser dropped, so a Codex teammate logged no tool calls | the stub emitted no agent events at all |
+
+The last two are the instructive ones: a stub that is wrong about a *message
+format* is more dangerous than no stub, because it makes the suite agree with
+the bug. Fixing the kill message alone turned six passing tests red.
+
+**Two gates neither engine lets an orchestrator past.** Both Claude and Codex
+refuse an untrusted directory, and Codex separately refuses an untrusted hook.
+Trust inherits from an enclosing trusted repository — a plain subdirectory and
+a git worktree both pass — but an independent checkout elsewhere does not, and
+tripping must not grant trust on an operator's behalf by editing their config.
+The yolo tier passes `--dangerously-bypass-hook-trust` because §9 says that
+tier has already surrendered more than this; the auto tier keeps it and parks
+once, visibly, for a human.

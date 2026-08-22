@@ -43,3 +43,25 @@ the
   check liveness against the daemon without parsing human-formatted output;
   until then `spawn.ts` shells out to `trip ls -a` and tolerates format
   drift.
+- **A failed spawn leaves its session and roster row behind.** `spawnTeammate`
+  writes the roster row and calls `trip create` before waiting on
+  registration, so a registration failure throws with the session live and the
+  row written. The teammate name stays held and the next `trip team spawn`
+  refuses it as already live. Recovery is `trip team kill <id>` and respawn;
+  the fix is either to unwind both on failure or to say so in the error.
+  Found by the first real spawn against a built trip — the failure that
+  surfaced it is fixed in
+  [`agent-orchestrator.md`](all/agent-orchestrator.md) §7, but the leftover
+  state is not.
+- **No way to run a single reconcile sweep from the CLI.** `watchTeam` takes
+  `{ once: true }` and the tests use it, but `trip team watcher` only runs the
+  loop, so an operator debugging one sweep has to write JavaScript. A `--once`
+  flag would make the watcher inspectable —
+  [`agent-orchestrator.md`](all/agent-orchestrator.md) §12.
+- **Writer worktrees land where neither engine trusts them.** §7 puts them at
+  `~/.trip/teams/<team>/wt/<id>`, and both Claude and Codex gate an untrusted
+  directory behind a prompt the teammate cannot answer, so a writer parks at
+  startup before it registers. Trust inherits into subdirectories of a trusted
+  repository — verified — so siting worktrees inside the repo would sidestep
+  it; tripping must not grant trust on the operator's behalf by editing their
+  config. See [`agent-orchestrator.md`](all/agent-orchestrator.md) §7.

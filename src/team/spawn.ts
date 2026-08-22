@@ -36,6 +36,13 @@ export interface SpawnOptions {
   engine?: Engine;
   worktree?: boolean;
   yolo?: boolean;
+  /** Engine model: an alias (opus, sonnet, fable, o3, …) or a full name. */
+  model?: string;
+  /** Reasoning effort. Claude's levels are validated against its enum;
+   *  codex gets the value passed through UNVALIDATED — whether codex
+   *  rejects or silently ignores an unknown value is unconfirmed, which is
+   *  why team ls displays effort: the operator can see what was asked. */
+  effort?: string;
   /** Set by the Phase 3 watcher; the CLI always passes false. */
   auto?: boolean;
   /** Override the prompt (the coordinator's differs, §17). */
@@ -92,14 +99,60 @@ export function tripKillTolerant(session: string): void {
   }
 }
 
-/** §9: every launch carries an autonomy tier; there is no interactive tier. */
-export function engineCommand(engine: Engine, yolo: boolean, prompt: string): string[] {
-  if (engine === "claude") {
-    return ["claude", "--permission-mode", yolo ? "bypassPermissions" : "auto", prompt];
+/** Claude's --effort levels, from its own --help. */
+export const CLAUDE_EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"];
+
+const TUNING_TOKEN = /^[A-Za-z0-9._/:-]+$/;
+
+export interface EngineTuning {
+  model?: string;
+  effort?: string;
+}
+
+export function validateTuning(engine: Engine, tuning: EngineTuning): void {
+  if (tuning.model !== undefined && !TUNING_TOKEN.test(tuning.model)) {
+    throw new Error(`invalid model '${tuning.model}'`);
   }
-  return yolo
-    ? ["codex", "--dangerously-bypass-approvals-and-sandbox", prompt]
-    : ["codex", "--approve-for-me", prompt];
+  if (tuning.effort === undefined) return;
+  if (engine === "claude" && !CLAUDE_EFFORT_LEVELS.includes(tuning.effort)) {
+    throw new Error(
+      `unknown effort '${tuning.effort}' for claude — one of: ${CLAUDE_EFFORT_LEVELS.join(", ")}`
+    );
+  }
+  if (engine === "codex" && !/^[a-z]+$/.test(tuning.effort)) {
+    throw new Error(`invalid effort '${tuning.effort}' for codex`);
+  }
+}
+
+/** §9: every launch carries an autonomy tier; there is no interactive tier.
+ *  Model and effort ride along when set — claude via --model/--effort, codex
+ *  via -m and -c model_reasoning_effort=… (both verified against the
+ *  installed binaries). The tier flags stay first and the prompt last, so
+ *  the base command shape is stable whether or not tuning is present. */
+export function engineCommand(
+  engine: Engine,
+  yolo: boolean,
+  prompt: string,
+  tuning: EngineTuning = {}
+): string[] {
+  validateTuning(engine, tuning);
+  if (engine === "claude") {
+    return [
+      "claude",
+      "--permission-mode",
+      yolo ? "bypassPermissions" : "auto",
+      ...(tuning.model ? ["--model", tuning.model] : []),
+      ...(tuning.effort ? ["--effort", tuning.effort] : []),
+      prompt,
+    ];
+  }
+  return [
+    "codex",
+    yolo ? "--dangerously-bypass-approvals-and-sandbox" : "--approve-for-me",
+    ...(tuning.model ? ["-m", tuning.model] : []),
+    ...(tuning.effort ? ["-c", `model_reasoning_effort=${tuning.effort}`] : []),
+    prompt,
+  ];
 }
 
 /** Only the coordinator or a human shell may spawn, respawn, or kill. */
@@ -248,7 +301,9 @@ export async function verifyAgentRegistration(
     }
     if (Date.now() >= deadline) {
       throw new Error(
-        `agent.json never appeared for ${session} — trip on did not fire. ` +
+        `agent.json never appeared for ${session} — either trip on did not ` +
+          `fire, or the engine died at launch (a mistyped --model fails ` +
+          `there, not here): check trip screen ${session} first. ` +
           `Is the SessionStart hook configured? Autopsy: trip log ${session}`
       );
     }
@@ -274,6 +329,7 @@ export async function spawnTeammate(
   if (opts.engine && opts.engine !== "claude" && opts.engine !== "codex") {
     throw new Error(`unknown engine '${opts.engine}' — use claude or codex`);
   }
+  validateTuning(opts.engine ?? "claude", opts); // fail before any side effect
   const roster = checkSpawn(team, id, {
     asCoordinator: !!opts.coordinator,
     auto: !!opts.auto,
@@ -339,6 +395,8 @@ export async function spawnTeammate(
     cwd,
     ...(worktree ? { worktree, branch } : {}),
     ...(opts.yolo ? { yolo: true } : {}),
+    ...(opts.model ? { model: opts.model } : {}),
+    ...(opts.effort ? { effort: opts.effort } : {}),
     spawned_at: new Date().toISOString(),
     spawns: (prior?.spawns ?? 0) + 1,
     restarts_since_human: opts.auto
@@ -359,7 +417,7 @@ export async function spawnTeammate(
     : protocolPath(team);
   const prompt =
     opts.prompt ?? teammatePrompt(team, id, opts.role, protocolRef);
-  tripExec(["create", session, "--", ...engineCommand(engine, !!opts.yolo, prompt)], {
+  tripExec(["create", session, "--", ...engineCommand(engine, !!opts.yolo, prompt, opts)], {
     cwd,
     env: { ...process.env, TRIP_TEAM: team, TRIP_AGENT: id },
   });

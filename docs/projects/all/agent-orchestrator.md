@@ -110,9 +110,9 @@ agent — `team ls` is how teammates discover each other — while `start`,
 (§16):
 
 ```
-trip team start <name> [--engine claude|codex] [--yolo] [--detach]
+trip team start <name> [--engine claude|codex] [--model m] [--effort e] [--yolo] [--detach]
 trip team init <name> [--max-agents N] [--max-respawns N] [--coordinator id]
-trip team spawn <id> --role "..." [--engine claude|codex] [--worktree] [--yolo]
+trip team spawn <id> --role "..." [--engine claude|codex] [--model m] [--effort e] [--worktree] [--yolo]
 trip team respawn <id> [--reason "..."] [--force]
 trip team requeue <id> <msg-id>
 trip team ls                     # roster + status, live count vs cap
@@ -125,7 +125,12 @@ trip team dispatch <file> --wait # fan out tasks, block until all results
 deterministic fan-out and fan-in rather than a reactive mailbox loop.
 
 Every command that launches an engine carries an autonomy tier (§9): the
-default is auto, and `--yolo` opts into the bypass tier. `spawn` can refuse —
+default is auto, and `--yolo` opts into the bypass tier. Model and reasoning
+effort are per-teammate the same way — `--model` and `--effort` on `spawn`
+and `start`, persisted on the roster row so a respawn replays them (claude
+takes `--model`/`--effort`; codex takes `-m` and
+`-c model_reasoning_effort=…`), with each engine's defaults applying when
+unset. `spawn` can refuse —
 on the caller, the population cap, or a missing or corrupt `team.json` — and
 every refusal names its recovery command (§16). `respawn` recycles an
 identity (§14); `requeue` revives a parked task (§15); `start` launches the

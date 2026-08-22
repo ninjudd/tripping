@@ -90,9 +90,9 @@ async function main(): Promise<void> {
     }
 
     case "start": {
-      const flags = parseFlags(rest, new Set(["engine", "coordinator", "max-agents", "max-respawns"]), new Set(["yolo", "detach"]));
+      const flags = parseFlags(rest, new Set(["engine", "coordinator", "max-agents", "max-respawns", "model", "effort"]), new Set(["yolo", "detach"]));
       const name = flags.positional[0] ?? process.env.TRIP_TEAM;
-      if (!name) fail("usage: trip team start <name> [--engine claude|codex] [--yolo] [--detach]");
+      if (!name) fail("usage: trip team start <name> [--engine claude|codex] [--model m] [--effort e] [--yolo] [--detach]");
       const roster = initTeam(name, {
         coordinator: flags.coordinator as string | undefined,
         maxAgents: flags["max-agents"] ? Number(flags["max-agents"]) : undefined,
@@ -110,6 +110,8 @@ async function main(): Promise<void> {
           role: "coordinator",
           engine: engineFlag(flags) ?? "claude",
           yolo: !!flags.yolo,
+          model: flags.model as string | undefined,
+          effort: flags.effort as string | undefined,
           prompt: coordinatorPrompt(name, coordinator),
           coordinator: true,
           // The coordinator's cwd is wherever start ran (§17); no worktree.
@@ -125,16 +127,18 @@ async function main(): Promise<void> {
     }
 
     case "spawn": {
-      const flags = parseFlags(rest, new Set(["role", "engine", "team"]), new Set(["worktree", "yolo"]));
+      const flags = parseFlags(rest, new Set(["role", "engine", "team", "model", "effort"]), new Set(["worktree", "yolo"]));
       const id = flags.positional[0];
       if (!id || !flags.role)
-        fail('usage: trip team spawn <id> --role "..." [--engine claude|codex] [--worktree] [--yolo]');
+        fail('usage: trip team spawn <id> --role "..." [--engine claude|codex] [--model m] [--effort e] [--worktree] [--yolo]');
       const team = teamFromEnv(flags);
       const result = await spawnTeammate(team, id, {
         role: flags.role as string,
         engine: engineFlag(flags) ?? "claude",
         worktree: !!flags.worktree,
         yolo: !!flags.yolo,
+        model: flags.model as string | undefined,
+        effort: flags.effort as string | undefined,
       });
       process.stdout.write(
         `spawned ${result.id} (${result.session})` +
@@ -170,7 +174,7 @@ async function main(): Promise<void> {
           : "?";
         const mail = `${count(inboxDir(team, id))} in / ${count(workingDir(team, id))} held / ${count(deadDir(team, id))} dead`;
         process.stdout.write(
-          `  ${id.padEnd(14)} ${row.engine.padEnd(6)} ${String(status).padEnd(8)} ` +
+          `  ${id.padEnd(14)} ${(row.engine + (row.model ? `/${row.model}` : "")).padEnd(14)} ${String(status).padEnd(8)} ` +
             `age ${age.padEnd(7)} spawns ${String(row.spawns ?? 1).padEnd(3)} ${mail}  ${row.role}` +
             (gone ? `  [session gone — trip team kill ${id}]` : "") +
             "\n"

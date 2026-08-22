@@ -358,14 +358,35 @@ describe("spawnTeammate (§7)", () => {
     expect(config.kind).toBe("claude");
     expect(config.log_path).toBe("/fake/transcript.jsonl"); // hook path kept
   });
-  it("fails loudly when agent.json never appears", async () => {
+  it("a dead session that never registered says the engine died", async () => {
     initTeam(TEAM);
-    // stub that creates the session but never writes agent.json
+    // creates the session directory but never writes agent.json, and never
+    // reports the name as live, so `ls` shows nothing.
     writeFileSync(join(stubDir, "trip"), `#!/bin/sh\nmkdir -p "${sessions}/$2"\n`);
     chmodSync(join(stubDir, "trip"), 0o755);
     await expect(
       spawnTeammate(TEAM, "w1", { role: "r", cwd: repo, registrationTimeoutMs: 1000 })
-    ).rejects.toThrow(/trip on did not fire/);
+    ).rejects.toThrow(/the session is gone/);
+  });
+  it("a live session that never registered says do not kill it", async () => {
+    // Observed live: a writer parked at its engine's trust dialog, the 15s
+    // registration poll lost the race against the human answering it, and the
+    // teammate registered and started work immediately after the throw.
+    // later.md used to tell the operator to kill and respawn here, which
+    // would have destroyed a healthy teammate mid-task.
+    initTeam(TEAM);
+    writeFileSync(join(stubDir, "trip"),
+      `#!/bin/sh\ncase "$1" in\n  create) mkdir -p "${sessions}/$2"; echo "$2" >> "${stubDir}/live.txt" ;;\n` +
+      `  ls) cat "${stubDir}/live.txt" 2>/dev/null || true ;;\nesac\n`);
+    chmodSync(join(stubDir, "trip"), 0o755);
+    // One attempt only: the session it leaves behind is live, so a second
+    // call is refused by the already-live gate before it can reach this path.
+    const err = await spawnTeammate(TEAM, "w1", {
+      role: "r", cwd: repo, registrationTimeoutMs: 1000,
+    }).catch((e: Error) => e);
+    expect(err.message).toMatch(/waiting at a prompt/);
+    expect(err.message).toMatch(/Do NOT kill it/);
+    expect(err.message).toMatch(/trip team ls/);
   });
 });
 

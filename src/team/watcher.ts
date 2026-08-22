@@ -35,18 +35,28 @@ import { reclaimWorking, respawnTeammate, REDELIVERY_CAP } from "./respawn.js";
  *  mail forever when the guard is wrong. */
 const TAIL_LINES = 12;
 
+/** The engines do not agree on the glyph. Claude renders its selector as ❯
+ *  (U+276F), Codex as › (U+203A) — a real Codex approval prompt read as
+ *  unparked until this class covered both, and the watcher would have typed
+ *  a doorbell straight into it. Kept to the arrow-like glyphs a TUI actually
+ *  draws; never ASCII '>', which is a shell prompt and a quoted command. */
+const SELECTOR = "[❯›▸‣⯈]";
+
 const STRONG_SIGNATURES = [
   /do you want/i,
   /don't ask again/i,
   /\by\s*\/\s*n\b/i,
-  /^\s*❯\s*\d+[.)]/m, // a selector sitting on a numbered choice
+  new RegExp(`^\\s*${SELECTOR}\\s*\\d+[.)]`, "m"), // selector on a numbered choice
 ];
 
 const WEAK_SIGNATURES = [/\bapprove\b/i, /allow .* to/i];
 
 /** How a prompt offers to be answered. Deliberately not ASCII '>': that is a
  *  shell prompt and the start of a quoted command line. */
-const AFFORDANCES = [/\by\s*\/\s*n\b/i, /^\s*❯/m];
+const AFFORDANCES = [
+  /\by\s*\/\s*n\b/i,
+  new RegExp(`^\\s*${SELECTOR}`, "m"),
+];
 
 /** After this many consecutive suppressed doorbells the park stops being a
  *  transient and becomes something a human has to look at — either a prompt

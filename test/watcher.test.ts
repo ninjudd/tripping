@@ -401,6 +401,19 @@ describe("screen guard", () => {
       expect(screenParked("t-x"), text).toBe(false);
     }
   });
+  it("catches both engines' selectors, not just Claude's", () => {
+    // Verbatim from real sessions: Claude renders ❯ (U+276F), Codex › (U+203A).
+    // The Codex one read as unparked until the selector class covered both.
+    const screens = [
+      "Do you want to proceed?\n❯ 1. Yes\n  2. No",
+      "trust the files in this folder?\n› 1. Yes, continue\n  2. No, quit",
+      "Approve this?\n▸ 1. Yes\n  2. No",
+    ];
+    for (const s of screens) {
+      setScreen("t-x", s);
+      expect(screenParked("t-x"), s).toBe(true);
+    }
+  });
   it("reads only the tail — the same words in scrollback are not a prompt", () => {
     const scrollback = Array.from(
       { length: 30 },

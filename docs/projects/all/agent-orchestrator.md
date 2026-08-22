@@ -14,12 +14,15 @@ Every teammate is a real CLI in a real PTY, which is the point: you can
 an SDK cannot offer that.
 
 The substrate this needs already exists. [`trip-primitives.md`](../../trip-primitives.md)
-records what trip gives us and the source facts the design depends on;
-nothing in trip has to change to ship this.
+records what trip gives us and the source facts the design depends on. One
+small, additive trip change rides alongside — the external-subcommand
+dispatcher ([trip#1](https://github.com/ninjudd/trip/pull/1)) that lets this
+package's verbs live under the `trip` command (§4) — and nothing else in
+trip has to change.
 
 ## 1. Scope
 
-In: the message bus, the `tripping` CLI, spawning and observing teammates, and
+In: the message bus, the CLI verbs, spawning and observing teammates, and
 a worked proof of a coordinator running two teammates to completion.
 
 Out: the chat frontends. `src/telegram/` and `src/discord/` stay untouched until
@@ -47,7 +50,7 @@ currently has focused, and it is gone the moment the agent compacts.
 ## 3. The two wake mechanisms
 
 **Blocking wait, the primary one.** A teammate's last action in every turn is
-`tripping message wait`, which blocks. The agent stays inside a tool call rather
+`trip message wait`, which blocks. The agent stays inside a tool call rather
 than going idle, so the next message arrives as a tool *result* — no injection,
 no race, no escaping. This is the steady-state loop, and it means most messages
 never touch a PTY at all.
@@ -57,29 +60,39 @@ and out-of-band control like a stop or a priority interrupt, need
 `trip send <session> "..."`. Because `agent_turn_end` tells us who is idle
 (§6), we only ring when it is safe to.
 
-## 4. The `tripping` CLI
+## 4. The CLI: one command, `trip`
 
-One binary, subcommand groups, shipped through a `bin` entry in `package.json`.
-Nothing else goes on `PATH` for an agent to confuse with `trip` itself.
+One command: `trip`. This package ships `trip-team` and `trip-message`
+(plus the `trip-msg` alias) as `bin` entries, and trip's external-subcommand
+dispatcher ([trip#1](https://github.com/ninjudd/trip/pull/1)) execs
+`trip-<name>` from PATH for any verb it does not own — the extension
+mechanism git and cargo use, so trip stays tiny and knows nothing about this
+package. Until that dispatcher lands, the shims run directly as
+`trip-team …` and `trip-message …` — a fallback that covers a human at a
+shell but not the strings the system generates, since the role prompt,
+PROTOCOL.md, the doorbell, and the respawn preamble all teach the dispatched
+form. The dispatcher is therefore a prerequisite for Phase 2 (§12): Phase 1
+needs no agents, and nothing spawns until `trip message read` is a command
+that exists. The verbs below are written the way the user types them.
 
-Identity comes from `TRIPPING_TEAM` and `TRIPPING_AGENT` in the environment, so
+Identity comes from `TRIP_TEAM` and `TRIP_AGENT` in the environment, so
 there is no `--from` flag anywhere and an agent cannot post as someone else by
 accident. One sender id, `tripping`, is reserved for the library's own
 bookkeeping messages (§14, §15): it is minted only inside the library, is not
-reachable from `tripping message send`, and `team spawn tripping` is refused.
+reachable from `trip message send`, and `team spawn tripping` is refused.
 The address `coordinator` is likewise reserved — an alias, resolved through
 `team.json` to whichever id holds the role, so the literal address every
 role prompt and park message writes to keeps working when `--coordinator` named
 someone else; `team spawn coordinator` is refused too.
 
-`tripping message` (alias: `tripping msg`) is what every teammate uses. It is
+`trip message` (alias: `trip msg`) is what every teammate uses. It is
 the whole surface an LLM has to learn, so it stays at four verbs:
 
 ```
-tripping message send <to> --subject S [--kind task] [--thread T]   # body on stdin
-tripping message read                  # print unread; claim tasks, archive the rest
-tripping message peek                  # print unread, leave them
-tripping message wait [--timeout 550]  # block until a message arrives
+trip message send <to> --subject S [--kind task] [--thread T]   # body on stdin
+trip message read                  # print unread; claim tasks, archive the rest
+trip message peek                  # print unread, leave them
+trip message wait [--timeout 550]  # block until a message arrives
 ```
 
 Two verb semantics are load-bearing. `read` claims a `kind: task` message by
@@ -91,21 +104,21 @@ respawned teammate with queued messages unblocks itself (§14). `read` and
 so the sender is always visible, and because `from` comes from the
 environment rather than a flag, it cannot be forged through the CLI.
 
-`tripping team` is the management group. `ls` and `watch` are open to every
+`trip team` is the management group. `ls` and `watch` are open to every
 agent — `team ls` is how teammates discover each other — while `start`,
 `spawn`, `respawn`, `requeue`, and `kill` are coordinator-or-human verbs
 (§16):
 
 ```
-tripping team start <name> [--engine claude|codex] [--yolo] [--detach]
-tripping team init <name> [--max-agents N] [--max-respawns N] [--coordinator id]
-tripping team spawn <id> --role "..." [--engine claude|codex] [--worktree] [--yolo]
-tripping team respawn <id> [--reason "..."] [--force]
-tripping team requeue <id> <msg-id>
-tripping team ls                     # roster + status, live count vs cap
-tripping team kill <id>
-tripping team watch <id>             # tail a teammate's structured log
-tripping team dispatch <file> --wait # fan out tasks, block until all results
+trip team start <name> [--engine claude|codex] [--yolo] [--detach]
+trip team init <name> [--max-agents N] [--max-respawns N] [--coordinator id]
+trip team spawn <id> --role "..." [--engine claude|codex] [--worktree] [--yolo]
+trip team respawn <id> [--reason "..."] [--force]
+trip team requeue <id> <msg-id>
+trip team ls                     # roster + status, live count vs cap
+trip team kill <id>
+trip team watch <id>             # tail a teammate's structured log
+trip team dispatch <file> --wait # fan out tasks, block until all results
 ```
 
 `--wait` is sugar over the same primitives, for when the coordinator wants
@@ -130,7 +143,7 @@ The bus is a maildir, because atomic-create-by-rename and atomic-claim-by-rename
 mean no locking, no partial reads, and `ls` is the debugger.
 
 ```
-~/.tripping/teams/<team>/
+~/.trip/teams/<team>/
   team.json                 roster + coordinator id + limits (§16); written tmp/ + rename
   bus.jsonl                 append-only audit: messages, task custody, population events
   tmp/                      staging for atomic writes
@@ -141,6 +154,9 @@ mean no locking, no partial reads, and `ls` is the debugger.
   artifacts/                large payloads, referenced by path from a message
   wt/<id>/                  git worktree, for roles that write
 ```
+
+`teams/` sits inside trip's own state home: the daemon never reads it, and
+the two packages share the directory the way they share the command.
 
 To send, write `tmp/<id>.json` and `rename` it into the recipient's `inbox/`.
 A message file exists in exactly one directory at all times, immutable, moved
@@ -176,7 +192,7 @@ result's `--thread` name the same string.
 
 Read the tail of `~/.trip/sessions/<name>/log.jsonl` on demand. This is
 stateless: no status file to go stale when the orchestrator is not running, and
-no watcher required to answer `tripping team ls`.
+no watcher required to answer `trip team ls`.
 
 The log outlives the session. `log.jsonl` is opened append-only and the session
 directory is never removed, so a respawned `<team>-<id>` appends to its previous
@@ -202,7 +218,7 @@ incarnation's idle.
 | `agent_turn_end`, `agent_session_end` | idle |
 | none yet, boundary set by a respawn's `spawned_at` | starting |
 | `agent_activity`, `agent_text`, `agent_tool_call` | working |
-| a `Bash` `agent_tool_call` whose input runs `tripping message wait`, no result yet | waiting — Claude only |
+| a `Bash` `agent_tool_call` whose input runs `trip message wait`, no result yet | waiting — Claude only |
 | none | unknown — `trip on` never fired, or it is a plain shell |
 
 The waiting row is derivable only for Claude teammates today. The tool call's
@@ -210,12 +226,12 @@ The waiting row is derivable only for Claude teammates today. The tool call's
 call's `input` — so the derivation inspects the input rather than matching the
 name. Codex records shell execution as a `custom_tool_call` named `exec`, which
 trip's codex parser currently drops, so a Codex teammate blocked on
-`tripping message wait` keeps reading as working. §8 loses nothing — the
-doorbell stays quiet for working and waiting alike — but `tripping team ls`
+`trip message wait` keeps reading as working. §8 loses nothing — the
+doorbell stays quiet for working and waiting alike — but `trip team ls`
 cannot separate a Codex teammate blocked on messages from one grinding
 through a task. Teaching trip's parser `custom_tool_call` closes the gap; it
-is the first thing on this plan that would want a trip change, and it is on
-[`later.md`](../later.md).
+is the next trip change this plan would want, after §4's dispatcher, and it
+is on [`later.md`](../later.md).
 
 The last row is a spawn failure, not a degraded mode. Everything else here
 depends on it, so §7 checks for it explicitly.
@@ -229,13 +245,13 @@ death is what triggers §15's respawn, not an idle reading.
 
 0. Fail-first checks, in `team/spawn.ts` so the CLI, `team dispatch`, and
    the watcher all inherit them: `team.json` present and parseable (else
-   refuse, naming `tripping team init`), the caller is the coordinator or a
+   refuse, naming `trip team init`), the caller is the coordinator or a
    human shell, the live count is under the cap, and — when the caller passes
    the auto flag — `restarts_since_human` is under `max_respawns` (§16).
 1. For a role that writes: `git worktree add wt/<id> -b team/<team>/<id>`.
    Roles that only read share the repository working directory.
 2. The messaging contract — identical for every engine and role — is written
-   once, to `~/.tripping/teams/<team>/PROTOCOL.md`, at `team init`. Writer
+   once, to `~/.trip/teams/<team>/PROTOCOL.md`, at `team init`. Writer
    roles get a copy at `wt/<id>/.tripping/PROTOCOL.md`, which the worktree's
    CLAUDE.md/AGENTS.md references so the contract re-enters context after
    every compaction. Roles without a worktree — read-only teammates, and the
@@ -244,8 +260,8 @@ death is what triggers §15's respawn, not an idle reading.
    their repository's own AGENTS.md: tripping never writes into the user's
    checkout.
 3. `trip create <team>-<id> -- <engine> "<role prompt>"`, spawned from Node with
-   `cwd` set to the worktree and `env` carrying `TRIPPING_TEAM` and
-   `TRIPPING_AGENT`. The prompt goes in argv. Never type it in afterwards —
+   `cwd` set to the worktree and `env` carrying `TRIP_TEAM` and
+   `TRIP_AGENT`. The prompt goes in argv. Never type it in afterwards —
    that races the TUI's startup.
 4. Check that `~/.trip/sessions/<team>-<id>/agent.json` appeared **and that
    its `kind` matches the engine**. `trip on`'s hook path hardcodes `codex`
@@ -261,11 +277,11 @@ death is what triggers §15's respawn, not an idle reading.
 
 The role prompt ends with the loop:
 
-> Start every session by running `tripping message read`. When you finish a
-> task, `tripping message send coordinator --kind result --thread <the task's
+> Start every session by running `trip message read`. When you finish a
+> task, `trip message send coordinator --kind result --thread <the task's
 > thread>`, written so a reader with no context can act on it, then run
-> `tripping message wait` to block for your next message. Never end a turn
-> without calling `tripping message wait`.
+> `trip message wait` to block for your next message. Never end a turn
+> without calling `trip message wait`.
 
 PROTOCOL.md carries the durable half of the contract. A "Your memory"
 section: `inbox/` is what you owe, `working/` is what you were holding —
@@ -274,7 +290,7 @@ check it and `git log` after any restart — `archive/` is your history,
 order, so `ls` and `cat` suffice; after any compaction or restart, re-read
 them and run `git status` before resuming referenced work. Plus: commit
 meaningful checkpoints as you go, and a task arriving with a restart note may
-be partially done. A "Your team" section: `tripping team ls` lists everyone —
+be partially done. A "Your team" section: `trip team ls` lists everyone —
 id, role, engine, and §6 status; any id is addressable with `message send`,
 teammates included; and the coordinator — your manager — is always
 addressable as `coordinator` (§4), where questions and blockers go with
@@ -301,16 +317,16 @@ first.
 
 When a message lands in agent X's inbox, look at X's status from §6:
 
-- **idle** — `trip send <session> "New message. Run: tripping message read"`.
+- **idle** — `trip send <session> "New message. Run: trip message read"`.
 - **working** or **waiting** — do nothing. They will pick it up themselves.
 - **starting** (§6) — do nothing. A respawned teammate's first action is
-  `tripping message read`, so the restart path needs no doorbell at all.
+  `trip message read`, so the restart path needs no doorbell at all.
 
 Every injection into a live session passes one guard first: `trip screen`,
 checked for the engine's permission-prompt signature. §9's default tier can
 park a teammate at a confirmation prompt, a prompt produces no event, and
 injected text would answer it — so a parked teammate is never rung. Instead
-it is flagged by `tripping team ls` (an annotation on top of §6's status,
+it is flagged by `trip team ls` (an annotation on top of §6's status,
 from the same check, not a new derived state) and the coordinator gets a
 `kind: note` from `tripping` naming the session, so a human can
 `trip attach` and answer. The note fires once per park — a flag on the
@@ -373,7 +389,7 @@ src/
   trip.ts              existing TripSession over `trip wrap`; unused by the core
   trip/log.ts          parse `trip log --raw --follow` into typed events
   team/
-    paths.ts           ~/.tripping/teams/<team>/…
+    paths.ts           ~/.trip/teams/<team>/…
     envelope.ts        the Message type, sortable id generation
     mailbox.ts         send / read / peek / wait; claim, close, requeue
     roster.ts          team.json
@@ -381,9 +397,8 @@ src/
     spawn.ts           checks (§16) + worktree + create + respawn (§15)
     watcher.ts         inbox watch, doorbells, death detection, sweep
   cli/
-    index.ts           the `tripping` binary
-    message.ts         tripping message …
-    team.ts            tripping team …
+    message.ts         bin: trip-message (alias trip-msg)
+    team.ts            bin: trip-team
 ```
 
 ## 11. Decision record
@@ -401,7 +416,7 @@ interesting for roles that never need a terminal; that is on
 it one binary already on every agent's `PATH`, a blocking wait riding the
 existing Unix socket instead of polling, and a daemon that already computes
 liveness. It was rejected to keep trip tiny and boring, which is its stated
-design goal. The cost is that `tripping message wait` polls the filesystem; at
+design goal. The cost is that `trip message wait` polls the filesystem; at
 a handful of agents and a 200ms tick, that is not a real cost.
 
 **Writers get a worktree each.** Parallel agents editing one tree is the primary
@@ -418,15 +433,32 @@ consecutive crash respawns, and §16 enforces exactly those.
 Transcript-parsing usage recorders are on [`later.md`](../later.md) as
 observability, never enforcement.
 
+**One command, two packages.** The verbs live under `trip` — `trip team`,
+`trip message` — through git-style external subcommands: trip dispatches an
+unknown verb to `trip-<name>` on PATH, and this package ships the shims
+([trip#1](https://github.com/ninjudd/trip/pull/1) is the dispatcher).
+Rejected: a second top-level command (`tripping`, `trips`) — two names for
+one system, typed constantly by agents; and moving trip's own
+verbs under `trip pty` — that breaks every terminal profile, shell hook, and
+agent hook that execs `trip enter`, `trip env`, or `trip on` today, and
+demotes the most-typed verbs to a longer spelling. Costs accepted: the
+plan's original no-trip-changes claim narrows to nothing-else-changes, and
+`trip --help` does not list external verbs. A trip built-in added later
+shadows any shim of the same name, so the flat namespace stays trip's to
+claim — acceptable with both packages under one owner.
+
 ## 12. Phases
 
-1. **Bus core.** Envelope, mailbox, roster, and `tripping message send / read /
+1. **Bus core.** Envelope, mailbox, roster, and `trip message send / read /
    peek / wait`. Fully testable with no agents running, which is the point of
    doing it first. Pins the two §4 semantics: `read` claims tasks into
    `working/`, and `wait` returns immediately on a non-empty inbox.
-2. **Spawn and observe.** Worktrees, `tripping team start` and `spawn` with
+2. **Spawn and observe.** Worktrees, `trip team start` and `spawn` with
    §16's checks in `spawn.ts`, the protocol doc, status derivation,
-   `tripping team ls` and `watch`.
+   `trip team ls` and `watch`. Prerequisite: the dispatcher
+   ([trip#1](https://github.com/ninjudd/trip/pull/1)) merged and installed —
+   every string this phase generates, from the role prompt to the doorbell,
+   teaches the dispatched form (§4), so nothing spawns before it exists.
 3. **Watcher.** Inbox watching, doorbell delivery, death detection, and the
    respawn sequence and reconcile sweep §15 spells out — the sweep also runs
    inside `dispatch --wait`'s poll loop, so fan-in fails fast on a dead
@@ -455,7 +487,7 @@ existing citations keep meaning, and new open questions land here.
 ## 14. Teammate lifetime
 
 Teammates are long-lived: one PTY session per roster id for the life of the
-team, parked in `tripping message wait` between tasks. Compaction is accepted
+team, parked in `trip message wait` between tasks. Compaction is accepted
 rather than fought — the memory of record is on disk (the message
 directories, `bus.jsonl`, the worktree and its branch), and the context
 window is a cache of it. §7's PROTOCOL.md guidance is that model made
@@ -468,7 +500,7 @@ project's reason to exist: the teammate you took the wheel of yesterday must
 still exist today. Stateless per-task roles remain available as coordinator
 policy — respawn before every dispatch — not as a CLI mode.
 
-Deviation is one verb: `tripping team respawn <id> [--reason "..."] [--force]`,
+Deviation is one verb: `trip team respawn <id> [--reason "..."] [--force]`,
 which kills and recreates the same identity — id, session name, mailbox,
 worktree, branch — and is the same sequence the Phase 3 watcher runs on a dead
 session (§15 owns the sequence). The coordinator respawns deliberately when a
@@ -512,7 +544,7 @@ possibly-live incarnation is the one unrecoverable mistake, so timeouts only
 escalate (§12).
 
 The respawn sequence — one implementation in `spawn.ts`, invoked by the
-watcher on a dead session and by `tripping team respawn` deliberately. Every
+watcher on a dead session and by `trip team respawn` deliberately. Every
 step is an idempotent rename or a tolerated error, so a crash at any point is
 recovered by rerunning:
 
@@ -538,8 +570,8 @@ recovered by rerunning:
 6. Write §14's restart notice into the inbox — after the kill, so no live
    wait can eat it.
 7. `trip create` exactly as §7 step 3, the role prompt prefixed with a resume
-   preamble: fresh incarnation of <id>; read PROTOCOL.md, run `tripping message
-   read`, check `git status`, then `tripping message wait`. Retry once on a
+   preamble: fresh incarnation of <id>; read PROTOCOL.md, run `trip message
+   read`, check `git status`, then `trip message wait`. Retry once on a
    connection failure: killing the daemon's last session makes the daemon
    exit, and a create in that window catches it mid-shutdown, when the old
    process still holds the lock the new one needs.
@@ -557,7 +589,7 @@ concurrent watchers converge on the same state.
 `bus.jsonl` grows from message audit to custody audit: one short line per
 claim, close, redeliver (with attempt number), dead-letter, and checkpoint,
 so `grep <task-id> bus.jsonl` prints a task's whole lifecycle and the
-re-delivery count needs no state file. `tripping team requeue <id> <msg-id>`
+re-delivery count needs no state file. `trip team requeue <id> <msg-id>`
 renames working|dead → inbox with the same audit line, reviving a parked
 task; `team ls` shows `working/` and `dead/` counts per teammate.
 
@@ -597,18 +629,18 @@ one chokepoint every spawn passes through (§7 step 0):
   the environment, and `bus.jsonl`'s population lines record which.
 
 Only the coordinator or a human shell may spawn or kill: when
-`TRIPPING_AGENT` names a teammate, both verbs refuse, and the message names
-the escalation (`tripping message send coordinator --kind question`). Teammates
+`TRIP_AGENT` names a teammate, both verbs refuse, and the message names
+the escalation (`trip message send coordinator --kind question`). Teammates
 spawning sub-teams is rejected for v1 — every downstream mechanism, from §3's
 loop to §8's doorbell to §11's integration to the flat `agents/` tree,
 assumes a one-level team, and the escalation path costs one message. Sub-teams
 are on [`later.md`](../later.md).
 
-`tripping team init` writes the defaults into `team.json` — coordinator id,
+`trip team init` writes the defaults into `team.json` — coordinator id,
 `limits {max_agents, max_respawns}` — so the file never lies about what
 applies; a hand-built file missing `limits` gets the defaults written back
 with a note. Spawn fails closed on a missing or unparseable `team.json`.
-`tripping team kill <id>` runs `trip kill` first, then stamps `killed_at` via
+`trip team kill <id>` runs `trip kill` first, then stamps `killed_at` via
 tmp/ + rename; rerunning is the crash recovery, and `team ls` flags a
 roster/daemon mismatch. A crashed teammate pins its slot until killed —
 deliberate, so the cap forces cleanup instead of silently freeing slots.
@@ -618,7 +650,7 @@ spawn counts, and message counts as activity proxies, labeled as such — never
 as spend (§11).
 
 Two honest limits. The cap and the caller gate stop runaway loops and
-accidents, not a yolo-tier teammate that unsets `TRIPPING_AGENT`, calls
+accidents, not a yolo-tier teammate that unsets `TRIP_AGENT`, calls
 `trip create` raw, or edits `team.json` — §9 is why that sentence has to
 exist, and `bus.jsonl` makes any population change explainable after the
 fact. And cap enforcement is check-then-write, so a human and the coordinator
@@ -627,14 +659,14 @@ accepted at this scale.
 
 ## 17. Starting a team
 
-`tripping team start <name>` is the front door, and the answer to how the
+`trip team start <name>` is the front door, and the answer to how the
 coordinator itself gets a session. It runs `team init` when `team.json` is
 missing, writes the coordinator's roster row (the id `--coordinator` chose at
 init, default `coordinator`; excluded from the cap, §16), creates the trip
 session `<team>-<coordinator-id>` — the `<team>-<id>` rule of §7 holds for the
 coordinator too, so every roster-derived lookup (§6, §15, §16) finds it; only
-the *address* is pinned, through §4's alias — with `TRIPPING_TEAM` and
-`TRIPPING_AGENT` set and §9's autonomy tier applied (`--engine`, `--yolo`), and
+the *address* is pinned, through §4's alias — with `TRIP_TEAM` and
+`TRIP_AGENT` set and §9's autonomy tier applied (`--engine`, `--yolo`), and
 then attaches the calling terminal — one command drops the human into their
 team. `--detach` skips the attach for scripting. Re-running `start` on a live
 team just attaches, so it is also the way back in; on a dead coordinator

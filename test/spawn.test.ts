@@ -13,7 +13,7 @@ import {
 import { readTeam, writeTeam, DEFAULT_LIMITS } from "../src/team/roster.js";
 import { deriveStatus } from "../src/team/status.js";
 import { protocolPath, protocolText, coordinatorPrompt, teammatePrompt } from "../src/team/protocol.js";
-import { teamDir } from "../src/team/paths.js";
+import { teamDir, teamJsonPath } from "../src/team/paths.js";
 
 const TEAM = "t";
 let root: string;
@@ -150,6 +150,12 @@ describe("init and step-0 checks (§16)", () => {
     }
     writeTeam(TEAM, roster);
     expect(() => checkSpawn(TEAM, "extra")).toThrow(/4\/4 teammates live/);
+    // The refusal names team.json so the operator knows where to raise the
+    // cap — the fourth derived path, and the one most likely to be edited
+    // later, since it is the only one carrying an instruction about a file
+    // the reader has to go and change.
+    expect(() => checkSpawn(TEAM, "extra")).toThrow(teamJsonPath(TEAM));
+    expect(() => checkSpawn(TEAM, "extra")).not.toThrow(/~\/\.trip\/teams/);
   });
   it("a killed teammate frees its slot; a live one refuses respawn without kill", () => {
     const roster = initTeam(TEAM);

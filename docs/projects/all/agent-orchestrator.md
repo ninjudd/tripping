@@ -68,8 +68,12 @@ dispatcher ([trip#1](https://github.com/ninjudd/trip/pull/1)) execs
 `trip-<name>` from PATH for any verb it does not own — the extension
 mechanism git and cargo use, so trip stays tiny and knows nothing about this
 package. Until that dispatcher lands, the shims run directly as
-`trip-team …` and `trip-message …`. The verbs below are written the way the
-user types them.
+`trip-team …` and `trip-message …` — a fallback that covers a human at a
+shell but not the strings the system generates, since the role prompt,
+PROTOCOL.md, the doorbell, and the respawn preamble all teach the dispatched
+form. The dispatcher is therefore a prerequisite for Phase 2 (§12): Phase 1
+needs no agents, and nothing spawns until `trip message read` is a command
+that exists. The verbs below are written the way the user types them.
 
 Identity comes from `TRIP_TEAM` and `TRIP_AGENT` in the environment, so
 there is no `--from` flag anywhere and an agent cannot post as someone else by
@@ -226,8 +230,8 @@ trip's codex parser currently drops, so a Codex teammate blocked on
 doorbell stays quiet for working and waiting alike — but `trip team ls`
 cannot separate a Codex teammate blocked on messages from one grinding
 through a task. Teaching trip's parser `custom_tool_call` closes the gap; it
-is the only other trip change this plan would want, after §4's dispatcher,
-and it is on [`later.md`](../later.md).
+is the next trip change this plan would want, after §4's dispatcher, and it
+is on [`later.md`](../later.md).
 
 The last row is a spawn failure, not a degraded mode. Everything else here
 depends on it, so §7 checks for it explicitly.
@@ -451,7 +455,10 @@ claim — acceptable with both packages under one owner.
    `working/`, and `wait` returns immediately on a non-empty inbox.
 2. **Spawn and observe.** Worktrees, `trip team start` and `spawn` with
    §16's checks in `spawn.ts`, the protocol doc, status derivation,
-   `trip team ls` and `watch`.
+   `trip team ls` and `watch`. Prerequisite: the dispatcher
+   ([trip#1](https://github.com/ninjudd/trip/pull/1)) merged and installed —
+   every string this phase generates, from the role prompt to the doorbell,
+   teaches the dispatched form (§4), so nothing spawns before it exists.
 3. **Watcher.** Inbox watching, doorbell delivery, death detection, and the
    respawn sequence and reconcile sweep §15 spells out — the sweep also runs
    inside `dispatch --wait`'s poll loop, so fan-in fails fast on a dead

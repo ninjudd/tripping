@@ -30,7 +30,7 @@ case "$1" in
   kill)
     if grep -qx "$2" "${stubDir}/live.txt" 2>/dev/null; then
       grep -vx "$2" "${stubDir}/live.txt" > "${stubDir}/t" || true; mv "${stubDir}/t" "${stubDir}/live.txt"
-    else echo "session not found" >&2; exit 1; fi ;;
+    else echo "Error: session '$2' not found" >&2; exit 1; fi ;;
   ls) cat "${stubDir}/live.txt" 2>/dev/null || true ;;
   screen) cat "${sessions}/$2/screen.txt" 2>/dev/null || true ;;
   send) echo "SEND $2 $3" >> "${stubDir}/calls.log" ;;

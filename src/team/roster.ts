@@ -49,13 +49,19 @@ export function readTeam(team: string): Team | null {
     parsed.agents = {};
     repaired = true;
   }
-  if (
-    !parsed.limits ||
-    typeof parsed.limits.max_agents !== "number" ||
-    typeof parsed.limits.max_respawns !== "number"
-  ) {
-    parsed.limits = { ...DEFAULT_LIMITS, ...(parsed.limits ?? {}) };
+  if (!parsed.limits || typeof parsed.limits !== "object") {
+    parsed.limits = { ...DEFAULT_LIMITS };
     repaired = true;
+  } else {
+    // Replace offending fields individually — spreading a known-bad object
+    // over the defaults puts the bad value back on top.
+    for (const field of ["max_agents", "max_respawns"] as const) {
+      const value = parsed.limits[field];
+      if (!Number.isInteger(value) || (value as number) <= 0) {
+        parsed.limits[field] = DEFAULT_LIMITS[field];
+        repaired = true;
+      }
+    }
   }
   if (!parsed.coordinator) {
     parsed.coordinator = "coordinator";

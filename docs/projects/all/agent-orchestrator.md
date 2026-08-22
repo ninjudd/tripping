@@ -216,7 +216,7 @@ incarnation's idle.
 | Last agent event | Status |
 |---|---|
 | `agent_turn_end`, `agent_session_end` | idle |
-| none yet, boundary set by a respawn's `spawned_at` | starting |
+| none yet, boundary set by a respawn's `spawned_at` | starting — bounded: silence long past registration derives unknown |
 | `agent_activity`, `agent_text`, `agent_tool_call` | working |
 | a `Bash` `agent_tool_call` whose input runs `trip message wait`, no result yet | waiting — Claude only |
 | none | unknown — `trip on` never fired, or it is a plain shell |
@@ -562,7 +562,11 @@ recovered by rerunning:
 3. `trip kill <team>-<id>`, tolerating "session not found".
 4. Checkpoint a dirty worktree: abort any in-progress rebase or merge, then
    commit everything on the teammate's own branch ("tripping: checkpoint
-   <id> before respawn"). Committed work always survives; the coordinator
+   <id> before respawn") — everything except the instruction files tripping
+   itself created (§7 step 2: `.tripping/`, and `AGENTS.md`/`CLAUDE.md` when
+   tripping wrote them), excluded by pathspec, since git has no
+   worktree-scoped ignore and the common `info/exclude` belongs to the
+   user's checkout. Committed work always survives; the coordinator
    squashes at integration (§11).
 5. Reclaim `working/`, judging each task from `bus.jsonl`: result already
    recorded → archive (the crash ate only bookkeeping); past the re-delivery

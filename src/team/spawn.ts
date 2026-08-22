@@ -9,7 +9,6 @@ import {
   writeFileSync,
   unlinkSync,
   symlinkSync,
-  appendFileSync,
 } from "fs";
 import { join } from "path";
 import { teamDir, validId } from "./paths.js";
@@ -191,6 +190,14 @@ export function initTeam(
   if (!validId(team)) throw new Error(`invalid team id: ${team}`);
   const existing = readTeam(team);
   if (existing) return existing;
+  for (const [flag, value] of [
+    ["--max-agents", opts.maxAgents],
+    ["--max-respawns", opts.maxRespawns],
+  ] as const) {
+    if (value !== undefined && (!Number.isInteger(value) || value <= 0)) {
+      throw new Error(`${flag} must be a positive integer`);
+    }
+  }
   const roster: Team = {
     coordinator: opts.coordinator ?? "coordinator",
     limits: {
@@ -285,31 +292,24 @@ export async function spawnTeammate(
     mkdirSync(dotDir, { recursive: true });
     writeFileSync(join(dotDir, "PROTOCOL.md"), protocolText(team));
     // tripping never edits the repo's own files: create AGENTS.md/CLAUDE.md
-    // only when the repo ships none, exclude what it created from git so
-    // checkpoint commits cannot carry them into integration, and otherwise
-    // leave the printed reference (§7 step 2) to the human.
-    const excluded = [".tripping/"];
+    // only when the repo ships none, and otherwise leave the printed
+    // reference (§7 step 2) to the human. The created files stay untracked
+    // and visible — there is no worktree-scoped git exclude (info/exclude
+    // resolves to the COMMON git dir and would hide files in the user's own
+    // checkout), so §15's checkpoint excludes them by pathspec instead.
     const agentsMd = join(worktree, "AGENTS.md");
     if (!existsSync(agentsMd)) {
       writeFileSync(agentsMd, agentsMdText(team));
-      excluded.push("AGENTS.md");
     } else {
       protocolReferenceNeeded = true;
     }
     const claudeMd = join(worktree, "CLAUDE.md");
     if (!existsSync(claudeMd)) {
-      symlinkSync("AGENTS.md", claudeMd);
-      excluded.push("CLAUDE.md");
-    }
-    try {
-      const excludePath = execFileSync(
-        "git",
-        ["-C", worktree, "rev-parse", "--git-path", "info/exclude"],
-        { encoding: "utf8" }
-      ).trim();
-      appendFileSync(excludePath, excluded.join("\n") + "\n");
-    } catch {
-      /* exclusion is best-effort; checkpoints still work without it */
+      try {
+        symlinkSync("AGENTS.md", claudeMd);
+      } catch {
+        /* AGENTS.md exists either way; the reference is what matters */
+      }
     }
     cwd = worktree;
   }

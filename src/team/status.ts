@@ -9,6 +9,10 @@ import { readTeam } from "./roster.js";
 
 export type Status = "idle" | "starting" | "working" | "waiting" | "unknown";
 
+/** How long a spawned session may stay silent before starting stops being
+ *  the story — several times the registration timeout. */
+export const STARTING_WINDOW_SECONDS = 60;
+
 export function sessionName(team: string, id: string): string {
   return `${team}-${id}`;
 }
@@ -45,9 +49,14 @@ export function deriveStatus(team: string, id: string): Status {
     (e) => e.t >= boundary && e.type !== "agent_session_start"
   );
   if (scoped.length === 0) {
-    // Nothing after the boundary: a respawn window derives as starting;
-    // no boundary at all means trip on never fired, or it is a plain shell.
-    return boundary > 0 ? "starting" : "unknown";
+    // Nothing after the boundary: a fresh spawn window derives as starting,
+    // but the window is bounded — a session silent long past registration is
+    // §6's spawn-failure row, and the honest answer is unknown, which tells
+    // the operator to go look at trip log. No boundary at all means trip on
+    // never fired, or it is a plain shell.
+    if (boundary === 0) return "unknown";
+    const age = Date.now() / 1000 - boundary;
+    return age <= STARTING_WINDOW_SECONDS ? "starting" : "unknown";
   }
 
   const last = scoped[scoped.length - 1];

@@ -181,6 +181,16 @@ describe("spawnTeammate (§7)", () => {
     expect(row.spawns).toBe(1);
     expect(result.session).toBe("t-w1");
   });
+  it("never touches the user's own git exclude", async () => {
+    initTeam(TEAM);
+    await spawnTeammate(TEAM, "w1", { role: "w", worktree: true, cwd: repo });
+    const exclude = join(repo, ".git", "info", "exclude");
+    if (existsSync(exclude)) {
+      const text = readFileSync(exclude, "utf8");
+      expect(text).not.toContain("AGENTS.md");
+      expect(text).not.toContain(".tripping");
+    }
+  });
   it("writer roles get a worktree, branch, contract copy, and AGENTS.md", async () => {
     initTeam(TEAM);
     const { worktree, branch, cwd } = await spawnTeammate(TEAM, "w1", {
@@ -293,6 +303,11 @@ describe("status derivation (§6)", () => {
     ]);
     expect(deriveStatus(TEAM, "w1")).toBe("starting");
   });
+  it("starting is bounded: long silence past registration derives unknown", () => {
+    rosterWith(new Date(Date.now() - 5 * 60_000).toISOString()); // spawned 5m ago
+    log([]); // registered nothing, ever
+    expect(deriveStatus(TEAM, "w1")).toBe("unknown");
+  });
   it("unknown when trip on never fired", () => {
     rosterWith();
     log([{ type: "output", t: now - 5, data: "shell noise" }]);
@@ -377,6 +392,22 @@ describe("hand-built and corrupt team.json (§16, §7 step 0)", () => {
   });
   it("init validates the coordinator id", () => {
     expect(() => initTeam("t9", { coordinator: "a.b" })).toThrow(/invalid/);
+  });
+  it("init refuses non-numeric limits instead of persisting null", () => {
+    expect(() => initTeam("t9", { maxAgents: Number("abc") })).toThrow(/positive integer/);
+    expect(() => initTeam("t9", { maxRespawns: 0 })).toThrow(/positive integer/);
+  });
+  it("the limits repair converges: a null limit becomes numeric once", () => {
+    initTeam(TEAM);
+    const path = join(process.env.TRIP_TEAMS_DIR!, TEAM, "team.json");
+    writeFileSync(path, JSON.stringify({
+      coordinator: "coordinator",
+      limits: { max_agents: null, max_respawns: 3 },
+      agents: {},
+    }));
+    expect(readTeam(TEAM)!.limits.max_agents).toBe(DEFAULT_LIMITS.max_agents);
+    // persisted, so the next read has nothing to repair
+    expect(JSON.parse(readFileSync(path, "utf8")).limits.max_agents).toBe(DEFAULT_LIMITS.max_agents);
   });
 });
 

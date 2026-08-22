@@ -806,8 +806,15 @@ to check `git log` before redoing work. It then re-claimed the task and
 carried on. Nothing was lost and nothing was duplicated.
 
 **Mixed engines are real.** A Claude teammate and a Codex teammate on one
-team, dispatched to together, both results joined in 34.6s. `trip team ls`
+team, dispatched to at once, both results joined in 34.6s. `trip team ls`
 shows `claude` and `codex` side by side and the bus does not distinguish them.
+
+The Codex teammate ran on `--yolo`, which is what let the run be unattended:
+that tier passes `--dangerously-bypass-hook-trust`, so §18's hook dialog never
+appeared and no human answered anything. An auto-tier Codex teammate would
+have parked there once. That is the one place this system still needs a person
+before it can run on its own, and anyone reproducing the result above should
+expect it.
 
 **Five defects that the stub could not have surfaced.** Each is a case where
 the stub and reality disagreed, and the suite believed the stub:

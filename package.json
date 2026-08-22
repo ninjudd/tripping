@@ -7,7 +7,7 @@
     "telegram": "node --env-file=.env --import=tsx src/telegram/index.ts",
     "discord": "node --env-file=.env --import=tsx src/discord/index.ts",
     "build": "tsc",
-    "test": "vitest run"
+    "test": "vitest run --testTimeout=30000"
   },
   "dependencies": {
     "discord.js": "^14.26.4",

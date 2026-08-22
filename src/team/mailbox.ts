@@ -25,6 +25,27 @@ import { readTeam, resolveAddress } from "./roster.js";
 /** Sender id minted only inside the library, never via the CLI. */
 export const RESERVED_SENDER = "tripping";
 
+export interface BusLine {
+  t: number;
+  event: string;
+  [key: string]: unknown;
+}
+
+/** Parse bus.jsonl tolerantly: the audit must survive a torn tail line. */
+export function readBus(team: string): BusLine[] {
+  if (!existsSync(busPath(team))) return [];
+  const lines: BusLine[] = [];
+  for (const line of readFileSync(busPath(team), "utf8").split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      lines.push(JSON.parse(line) as BusLine);
+    } catch {
+      /* torn write; skip */
+    }
+  }
+  return lines;
+}
+
 /** One short line per event; bodies stay out of bus.jsonl. */
 export function bus(team: string, record: Record<string, unknown>): void {
   ensureTeamDirs(team);
@@ -189,6 +210,45 @@ export function closeWorking(
   const id = target.file.replace(/\.json$/, "");
   bus(team, { event: "close", agent, id, thread: target.message.thread });
   return { closed: id, warning };
+}
+
+/** The tasks an agent currently holds, oldest first. */
+export function workingEntries(
+  team: string,
+  agent: string
+): { file: string; message: Message }[] {
+  return listEntries(workingDir(team, agent)).entries;
+}
+
+/** Revive a parked or held task: rename working|dead -> inbox, with the
+ *  audit line and a companion note so the reader knows why it is back. */
+export function requeueMessage(
+  team: string,
+  agent: string,
+  msgId: string
+): "working" | "dead" {
+  const file = `${msgId}.json`;
+  for (const [source, dir] of [
+    ["working", workingDir(team, agent)],
+    ["dead", deadDir(team, agent)],
+  ] as const) {
+    if (existsSync(join(dir, file))) {
+      renameSync(join(dir, file), join(inboxDir(team, agent), file));
+      bus(team, { event: "requeue", agent, id: msgId, from_dir: source });
+      send(team, {
+        from: RESERVED_SENDER,
+        to: agent,
+        kind: "note",
+        subject: `task ${msgId} re-queued from ${source}/`,
+        body: `A human or the coordinator revived this task. Check git log before redoing work.`,
+        thread: msgId,
+      });
+      return source;
+    }
+  }
+  throw new Error(
+    `${msgId} is in neither working/ nor dead/ for '${agent}'`
+  );
 }
 
 export interface ReadResult {

@@ -25,6 +25,7 @@
     "trip-team": "dist/cli/team.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "plugin"
   ]
 }

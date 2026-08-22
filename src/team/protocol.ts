@@ -26,6 +26,12 @@ and --subject is required:
     echo "what you did, self-contained" | trip message send coordinator \\
       --kind result --thread <the task's thread> --subject "..."
 
+**Copy the thread exactly as \`trip message read\` printed it.** It is an
+opaque id like \`01M0M42N7ZKJD42BGYVZY3DP7Y\`, not a description — a
+readable slug you invent from the subject matches nothing, and a
+coordinator waiting on the real thread waits forever. Sending one is
+refused, and the refusal names the thread to use.
+
 Write it so a reader with no context can act on it. Then run
 \`trip message wait\` to block for your next message. Never end a turn
 without calling \`trip message wait\`.
@@ -63,7 +69,8 @@ Read ${protocolRef} for the messaging contract. Start by running
 stdin, --subject required:
 \`echo "..." | trip message send coordinator --kind result --thread <the
 task's thread> --subject "..."\` — written so a reader with no context
-can act on it. Then run \`trip message wait\` to block for your next
+can act on it. The thread is the opaque id \`trip message read\` printed;
+copy it exactly rather than inventing a readable one. Then run \`trip message wait\` to block for your next
 message. Never end a turn without calling \`trip message wait\`.`;
 }
 

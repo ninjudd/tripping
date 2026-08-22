@@ -10,7 +10,8 @@ import {
   unlinkSync,
   symlinkSync,
 } from "fs";
-import { join } from "path";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 import { teamDir, validId } from "./paths.js";
 import {
   Team,
@@ -152,13 +153,43 @@ export function tripKillTolerant(session: string): void {
 }
 
 /** §9: every launch carries an autonomy tier; there is no interactive tier. */
+/** Where the shipped plugin lives, resolved from this module rather than the
+ *  caller's cwd: dist/team/spawn.js -> the package root -> plugin/. */
+export function pluginDir(): string {
+  return join(dirname(fileURLToPath(import.meta.url)), "..", "..", "plugin");
+}
+
+/** The SessionStart hook both engines run to register with trip.
+ *  Failure is swallowed: outside a trip session `trip on` has nothing to do,
+ *  and a hook that errors on every plain shell is worse than no hook. */
+const REGISTER_HOOK = "trip on >/dev/null 2>&1 || true";
+
+/** Codex takes the same hook shape as its config file, injected per launch as
+ *  TOML on the command line, so tripping never edits ~/.codex/config.toml. */
+const CODEX_HOOK_CONFIG =
+  `hooks.SessionStart=[{hooks=[{type="command",command=${JSON.stringify(REGISTER_HOOK)}}]}]`;
+
 export function engineCommand(engine: Engine, yolo: boolean, prompt: string): string[] {
   if (engine === "claude") {
-    return ["claude", "--permission-mode", yolo ? "bypassPermissions" : "auto", prompt];
+    return [
+      "claude",
+      "--permission-mode",
+      yolo ? "bypassPermissions" : "auto",
+      // Session-scoped: carries the SessionStart hook that runs `trip on` and
+      // the trip-team skill. Without registration §6 can derive nothing at
+      // all, so this is load-bearing, not a convenience.
+      "--plugin-dir",
+      pluginDir(),
+      prompt,
+    ];
   }
-  return yolo
-    ? ["codex", "--dangerously-bypass-approvals-and-sandbox", prompt]
-    : ["codex", "--approve-for-me", prompt];
+  return [
+    "codex",
+    yolo ? "--dangerously-bypass-approvals-and-sandbox" : "--approve-for-me",
+    "-c",
+    CODEX_HOOK_CONFIG,
+    prompt,
+  ];
 }
 
 /** Only the coordinator or a human shell may spawn, respawn, or kill. */

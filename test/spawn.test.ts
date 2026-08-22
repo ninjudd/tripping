@@ -8,7 +8,7 @@ import { join } from "path";
 import { execFileSync } from "child_process";
 import {
   initTeam, checkSpawn, spawnTeammate, killTeammate, engineCommand,
-  verifyAgentRegistration, sessionAlive, teammateEnv,
+  verifyAgentRegistration, sessionAlive, teammateEnv, pluginDir,
   AGENT_ENV_PATTERN, INHERITED_AGENT_CONFIG,
 } from "../src/team/spawn.js";
 import { readTeam, writeTeam, DEFAULT_LIMITS } from "../src/team/roster.js";
@@ -92,13 +92,38 @@ afterEach(() => {
 });
 
 describe("engineCommand (§9 tiers)", () => {
+  const CODEX_HOOK = expect.stringContaining("hooks.SessionStart");
   it("auto tier", () => {
-    expect(engineCommand("claude", false, "p")).toEqual(["claude", "--permission-mode", "auto", "p"]);
-    expect(engineCommand("codex", false, "p")).toEqual(["codex", "--approve-for-me", "p"]);
+    expect(engineCommand("claude", false, "p")).toEqual([
+      "claude", "--permission-mode", "auto", "--plugin-dir", pluginDir(), "p",
+    ]);
+    expect(engineCommand("codex", false, "p")).toEqual([
+      "codex", "--approve-for-me", "-c", CODEX_HOOK, "p",
+    ]);
   });
   it("yolo tier", () => {
-    expect(engineCommand("claude", true, "p")).toEqual(["claude", "--permission-mode", "bypassPermissions", "p"]);
-    expect(engineCommand("codex", true, "p")).toEqual(["codex", "--dangerously-bypass-approvals-and-sandbox", "p"]);
+    expect(engineCommand("claude", true, "p")).toEqual([
+      "claude", "--permission-mode", "bypassPermissions", "--plugin-dir", pluginDir(), "p",
+    ]);
+    expect(engineCommand("codex", true, "p")).toEqual([
+      "codex", "--dangerously-bypass-approvals-and-sandbox", "-c", CODEX_HOOK, "p",
+    ]);
+  });
+  it("ships the plugin the hook and the skill live in", () => {
+    // Registration is what §6 derives everything from, so the plugin is
+    // load-bearing: if it is missing from the package, every spawn silently
+    // stops registering and no status can be derived.
+    expect(existsSync(join(pluginDir(), ".claude-plugin", "plugin.json"))).toBe(true);
+    expect(existsSync(join(pluginDir(), "hooks", "hooks.json"))).toBe(true);
+    expect(existsSync(join(pluginDir(), "skills", "trip-team", "SKILL.md"))).toBe(true);
+    const hooks = JSON.parse(readFileSync(join(pluginDir(), "hooks", "hooks.json"), "utf8"));
+    expect(JSON.stringify(hooks.hooks.SessionStart)).toContain("trip on");
+  });
+  it("gives codex the same hook, as TOML on the command line", () => {
+    // Neither engine's global config is edited; both get it per launch.
+    const cfg = engineCommand("codex", false, "p")[3];
+    expect(cfg).toContain("hooks.SessionStart");
+    expect(cfg).toContain("trip on");
   });
 });
 

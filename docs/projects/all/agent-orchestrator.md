@@ -694,3 +694,48 @@ the coordinator, the longest-lived agent on the team and the one most
 certain to compact. It is a real trip session like any other — `trip attach`,
 `trip screen`, and `trip log` all apply — and a human taking the wheel of the
 coordinator is the expected way to steer the team.
+
+## 18. The plugin: registration and the protocol, in one shipped directory
+
+Everything in §6 is derived from trip's normalized agent events, and those
+only exist after `trip on` runs inside a session (`docs/trip-primitives.md`).
+Nothing runs it by itself. The setup trip's README recommends is a
+`SessionStart` hook in each engine's global config, which is fine for a human
+who set their machine up once and useless for a teammate tripping spawns:
+tripping cannot require that every operator has already edited
+`~/.claude/settings.json`, and it must not edit that file itself.
+
+So the registration hook ships with tripping, in `plugin/`, and is passed at
+launch rather than installed:
+
+| Engine | How it is passed |
+|---|---|
+| Claude | `--plugin-dir <pkg>/plugin` — hooks and skills, session-scoped |
+| Codex | `-c 'hooks.SessionStart=[…]'` — the same hook shape its config file takes, as TOML on the command line |
+
+Neither engine's global configuration is touched, nothing persists after the
+session, and an operator who *has* configured the hook globally simply runs it
+twice, which is idempotent.
+
+**Why a plugin rather than an MCP server.** An MCP server was the obvious
+alternative and is the wrong shape here, for a reason specific to §6: `waiting`
+is derived by recognising a **Bash** tool call whose command runs
+`trip message wait` (`status.ts`). Move the verbs into MCP tools and the tool
+name is no longer Bash, so `waiting` stops deriving, and §8's doorbell policy
+— which keys off status — loses the one state that means *do not interrupt*.
+An MCP server is also a process per teammate to start, supervise and tear
+down, against a design (§11) whose whole premise is that state lives on disk
+and processes are disposable.
+
+**Why not skills alone.** Skills are the payload, not the delivery. A skill
+teaches; only a hook *runs* at session start, and running `trip on` is the
+part without which nothing else works. The plugin is what carries a hook and a
+skill together, and it is the one packaging format both engines accept.
+
+The skill in `plugin/skills/trip-team/` is the protocol as progressive
+disclosure: named in one line, loaded when relevant. It does not replace
+`PROTOCOL.md`, which stays the canonical copy §7 writes into the team
+directory and references from `AGENTS.md`, because that is what survives a
+compaction. Codex reads skills from its own directory rather than from a
+`--plugin-dir`, so today the skill reaches Claude teammates and the protocol
+reaches both.

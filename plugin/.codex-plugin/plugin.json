@@ -1,0 +1,7 @@
+{
+  "name": "trip-team",
+  "version": "0.1.0",
+  "description": "Registers the session with trip and teaches the team message protocol.",
+  "author": { "name": "Justin Balthrop", "email": "git@justinbalthrop.com" },
+  "skills": "./skills/"
+}

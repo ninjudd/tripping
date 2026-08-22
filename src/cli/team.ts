@@ -15,7 +15,7 @@ import {
 } from "../team/spawn.js";
 import { readTeam } from "../team/roster.js";
 import { deriveStatus, sessionName } from "../team/status.js";
-import { inboxDir, workingDir, deadDir } from "../team/paths.js";
+import { inboxDir, workingDir, deadDir, teamJsonPath } from "../team/paths.js";
 import { coordinatorPrompt } from "../team/protocol.js";
 import { respawnTeammate } from "../team/respawn.js";
 import { requeueMessage } from "../team/mailbox.js";
@@ -95,7 +95,7 @@ async function main(): Promise<void> {
         maxRespawns: flags["max-respawns"] ? Number(flags["max-respawns"]) : undefined,
         coordinator: flags.coordinator as string | undefined,
       });
-      process.stdout.write(`team '${name}' ready — limits in ~/.trip/teams/${name}/team.json\n`);
+      process.stdout.write(`team '${name}' ready — limits in ${teamJsonPath(name)}\n`);
       return;
     }
 

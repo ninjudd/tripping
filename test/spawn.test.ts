@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
 import {
   mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync,
-  existsSync, chmodSync, lstatSync, appendFileSync,
+  existsSync, chmodSync, lstatSync, appendFileSync, cpSync,
 } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -61,6 +61,26 @@ function markDead(session: string): void {
   }
 }
 
+
+/** A git repo costs three process spawns to create, and every test needed
+ *  one: ~290 execs across the suite. Build it once per file and copy it
+ *  in-process instead — three execs per file. Worth doing because an exec is
+ *  not free here (a machine running endpoint scanning pays per process), but
+ *  measure before blaming the suite for a slow run: it is 15s on an idle
+ *  machine and 80s on a loaded one, and load has dominated every time. */
+let repoTemplate: string;
+function makeRepoTemplate(): void {
+  repoTemplate = mkdtempSync(join(tmpdir(), "tripping-repo-template-"));
+  execFileSync("git", ["init", "-q", repoTemplate]);
+  writeFileSync(join(repoTemplate, "README.md"), "hi\n");
+  execFileSync("git", ["-C", repoTemplate, "add", "-A"]);
+  execFileSync("git", ["-C", repoTemplate, "-c", "user.email=t@t", "-c", "user.name=t",
+    "commit", "-qm", "init"]);
+}
+
+beforeAll(makeRepoTemplate);
+afterAll(() => rmSync(repoTemplate, { recursive: true, force: true }));
+
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "tripping-spawn-"));
   sessions = join(root, "sessions");
@@ -68,11 +88,7 @@ beforeEach(() => {
   repo = join(root, "repo");
   mkdirSync(sessions, { recursive: true });
   mkdirSync(stubDir, { recursive: true });
-  mkdirSync(repo, { recursive: true });
-  execFileSync("git", ["init", "-q", repo]);
-  writeFileSync(join(repo, "README.md"), "hi\n");
-  execFileSync("git", ["-C", repo, "add", "-A"]);
-  execFileSync("git", ["-C", repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"]);
+  cpSync(repoTemplate, repo, { recursive: true });
   process.env.TRIP_TEAMS_DIR = join(root, "teams");
   process.env.TRIP_SESSIONS_DIR = sessions;
   savedPath = process.env.PATH!;

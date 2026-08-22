@@ -165,7 +165,16 @@ export function pluginDir(): string {
 const REGISTER_HOOK = "trip on >/dev/null 2>&1 || true";
 
 /** Codex takes the same hook shape as its config file, injected per launch as
- *  TOML on the command line, so tripping never edits ~/.codex/config.toml. */
+ *  TOML on the command line, so tripping never edits ~/.codex/config.toml.
+ *
+ *  Codex gates a new or changed hook behind its own "Hooks need review"
+ *  dialog, so the first spawn carrying this parks until a human answers it
+ *  once. That is unavoidable from here and it is the right default — hooks
+ *  run outside Codex's sandbox, which is precisely why `trip on` needs to be
+ *  one: run from an ordinary Codex shell it fails with "Operation not
+ *  permitted", because seatbelt denies the write to ~/.trip/sessions/.
+ *  §8's guard detects that dialog, so the teammate parks visibly rather than
+ *  being typed into. */
 const CODEX_HOOK_CONFIG =
   `hooks.SessionStart=[{hooks=[{type="command",command=${JSON.stringify(REGISTER_HOOK)}}]}]`;
 

@@ -717,6 +717,17 @@ Neither engine's global configuration is touched, nothing persists after the
 session, and an operator who *has* configured the hook globally simply runs it
 twice, which is idempotent.
 
+**Claude registers unattended; Codex needs one human answer first.** Codex
+gates a new or changed hook behind a "Hooks need review" dialog, so the first
+spawn carrying tripping's hook parks until someone chooses *Trust all and
+continue*. There is no way around it from here, and it should not be worked
+around: hooks run *outside* Codex's sandbox, which is exactly why `trip on`
+has to be one. Run from an ordinary Codex shell it fails with `Operation not
+permitted` — seatbelt denies the write to `~/.trip/sessions/`. Only the yolo
+tier (§9), which disables the sandbox, can register from the shell instead.
+§8's guard detects that dialog, so a teammate waiting on it parks visibly and
+is never typed into.
+
 **Why a plugin rather than an MCP server.** An MCP server was the obvious
 alternative and is the wrong shape here, for a reason specific to §6: `waiting`
 is derived by recognising a **Bash** tool call whose command runs

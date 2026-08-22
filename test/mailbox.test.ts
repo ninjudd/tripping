@@ -113,12 +113,14 @@ describe("result closes working", () => {
     expect(close?.closed).toBeTruthy();
     expect(close?.warning).toMatch(/only task in flight/);
   });
-  it("missing --thread with several in flight closes none and lists them", () => {
+  it("missing --thread with several in flight refuses before delivery", () => {
     const t1 = dispatchAndClaim();
     const t2 = dispatchAndClaim();
-    const { close } = send(TEAM, { from: "w1", to: "c", kind: "result", subject: "", body: "" });
-    expect(close?.closed).toBeUndefined();
-    expect(close?.inFlight).toEqual([t1, t2].sort());
+    expect(() =>
+      send(TEAM, { from: "w1", to: "c", kind: "result", subject: "", body: "" })
+    ).toThrow(new RegExp(`in flight: ${[t1, t2].sort().join(", ")}`));
+    // nothing delivered, nothing closed: an unattributable result never lands
+    expect(existsSync(inboxDir(TEAM, "c"))).toBe(false);
     expect(readdirSync(workingDir(TEAM, "w1"))).toHaveLength(2);
   });
   it("a wrong thread closes nothing and the task stays in flight", () => {
@@ -218,6 +220,36 @@ describe("review findings", () => {
     const c = newId(6000);
     expect(b > a).toBe(true);
     expect(c > b).toBe(true);
+  });
+  it("a thread match beats a filename collision — never closes the wrong task", () => {
+    // A: follow-up task whose thread differs from its id
+    const { message: a } = send(TEAM, {
+      from: "c", to: "w1", kind: "task", subject: "A", body: "", thread: "TTT",
+    });
+    // B: threaded on A's id — id-vs-thread interchangeable until they are not
+    const { message: b } = send(TEAM, {
+      from: "c", to: "w1", kind: "task", subject: "B", body: "", thread: a.id,
+    });
+    read(TEAM, "w1");
+    const { close } = send(TEAM, {
+      from: "w1", to: "c", kind: "result", subject: "", body: "", thread: a.id,
+    });
+    expect(close?.closed).toBe(b.id); // envelope thread wins
+    expect(readdirSync(workingDir(TEAM, "w1"))).toEqual([`${a.id}.json`]);
+  });
+  it("warns when the roster exists and does not know the recipient", () => {
+    writeTeam(TEAM, {
+      coordinator: "lead",
+      limits: DEFAULT_LIMITS,
+      agents: { w1: { role: "r", engine: "claude", session: "t-w1", cwd: "/" } },
+    });
+    expect(send(TEAM, { from: "w1", to: "corrdinator", kind: "note", subject: "", body: "" }).unknownRecipient).toBe(true);
+    expect(send(TEAM, { from: "w1", to: "lead", kind: "note", subject: "", body: "" }).unknownRecipient).toBeUndefined();
+    expect(send(TEAM, { from: "w1", to: "coordinator", kind: "note", subject: "", body: "" }).unknownRecipient).toBeUndefined();
+    expect(send(TEAM, { from: "lead", to: "w1", kind: "note", subject: "", body: "" }).unknownRecipient).toBeUndefined();
+  });
+  it("no roster means no unknown-recipient warning", () => {
+    expect(send(TEAM, { from: "a", to: "b", kind: "note", subject: "", body: "" }).unknownRecipient).toBeUndefined();
   });
   it("mailbox functions reject ids with path characters", () => {
     expect(() => read(TEAM, "../w1")).toThrow(/invalid agent/);

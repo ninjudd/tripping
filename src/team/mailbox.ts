@@ -20,7 +20,7 @@ import {
   validId,
 } from "./paths.js";
 import { Draft, Message, makeMessage } from "./envelope.js";
-import { resolveAddress } from "./roster.js";
+import { readTeam, resolveAddress } from "./roster.js";
 
 /** Sender id minted only inside the library, never via the CLI. */
 export const RESERVED_SENDER = "tripping";
@@ -68,6 +68,8 @@ export interface SendResult {
   message: Message;
   /** Set when a result send closed (or failed to close) a working/ task. */
   close?: CloseResult;
+  /** The roster exists and does not know this recipient — likely a typo. */
+  unknownRecipient?: boolean;
 }
 
 export interface CloseResult {
@@ -100,6 +102,13 @@ export function send(team: string, draft: Draft): SendResult {
     if (entries.length === 1) {
       thread = entries[0].message.thread;
       autoResolved = entries[0].file.replace(/\.json$/, "");
+    } else if (entries.length > 1) {
+      // A result carrying thread "" is one nothing can ever correlate.
+      // Refuse before delivery; the agent re-sends with the thread.
+      const ids = entries.map((e) => e.file.replace(/\.json$/, ""));
+      throw new Error(
+        `a result needs --thread when several tasks are in flight; in flight: ${ids.join(", ")}`
+      );
     }
   }
 
@@ -125,7 +134,14 @@ export function send(team: string, draft: Draft): SendResult {
       close.warning = `no --thread given; closed the only task in flight (${close.closed})`;
     }
   }
-  return { message, close };
+
+  // Mail queues ahead of a spawn, so an unknown recipient still gets a
+  // mailbox — but when a roster exists and does not know the id, say so:
+  // a typo'd recipient is the likeliest way a message goes missing.
+  const roster = readTeam(team);
+  const unknownRecipient =
+    roster !== null && to !== roster.coordinator && !(to in roster.agents);
+  return { message, close, ...(unknownRecipient ? { unknownRecipient } : {}) };
 }
 
 /**
@@ -147,10 +163,11 @@ export function closeWorking(
   let target: Entry | undefined;
   let warning: string | undefined;
   if (thread) {
-    // Oldest match wins when several tasks share a thread.
-    target = entries.find(
-      (e) => e.message.thread === thread || e.file === `${thread}.json`
-    );
+    // Matched by envelope thread only — the filename is the task's id, which
+    // equals the thread just for fresh tasks, and a filename fallback can
+    // shadow a genuine thread match and close the wrong task. Oldest match
+    // wins when several tasks share a thread.
+    target = entries.find((e) => e.message.thread === thread);
     if (!target) {
       return {
         warning: `--thread ${thread} matches no task in flight; closed none`,

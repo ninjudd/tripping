@@ -47,18 +47,13 @@ function parseFlags(argv: string[], takesValue: Set<string>): Flags {
       continue;
     }
     const name = arg.slice(2);
-    if (!takesValue.has(name))
-      fail(`unknown flag --${name}`);
-    if (takesValue.has(name)) {
-      const value = argv[++i];
-      if (value === undefined) fail(`--${name} needs a value`);
-      if (name === "artifact") {
-        out.artifact = [...((out.artifact as string[]) ?? []), value];
-      } else {
-        out[name] = value;
-      }
+    if (!takesValue.has(name)) fail(`unknown flag --${name}`);
+    const value = argv[++i];
+    if (value === undefined) fail(`--${name} needs a value`);
+    if (name === "artifact") {
+      out.artifact = [...((out.artifact as string[]) ?? []), value];
     } else {
-      out[name] = true;
+      out[name] = value;
     }
   }
   return out;
@@ -101,7 +96,7 @@ async function main(): Promise<void> {
       if (!KINDS.includes(kind as Kind)) fail(`unknown kind '${kind}' (one of: ${KINDS.join(", ")})`);
       if (flags.subject === undefined) fail("--subject is required");
       const body = await readStdin();
-      const { message, close } = send(team, {
+      const { message, close, unknownRecipient } = send(team, {
         from: agent,
         to,
         kind: kind as Kind,
@@ -112,6 +107,10 @@ async function main(): Promise<void> {
         artifacts: flags.artifact as string[] | undefined,
       });
       process.stdout.write(`sent ${message.id} to ${message.to} (${message.kind}, thread ${message.thread})\n`);
+      if (unknownRecipient)
+        process.stderr.write(
+          `warning: '${message.to}' is not on the roster; the message will wait in their inbox\n`
+        );
       if (close?.closed) process.stdout.write(`closed task ${close.closed}\n`);
       if (close?.warning) process.stderr.write(`warning: ${close.warning}\n`);
       if (close?.inFlight) process.stdout.write(`in flight: ${close.inFlight.join(", ")}\n`);

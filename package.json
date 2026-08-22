@@ -1,7 +1,7 @@
 {
   "name": "tripping",
   "version": "0.1.0",
-  "description": "Chat frontends for trip sessions",
+  "description": "Agent orchestration over trip sessions: the team message bus, and chat frontends",
   "type": "module",
   "scripts": {
     "telegram": "node --env-file=.env --import=tsx src/telegram/index.ts",

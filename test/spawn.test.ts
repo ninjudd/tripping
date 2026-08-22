@@ -499,6 +499,36 @@ describe("waiting matcher (§6)", () => {
     ].join("\n") + "\n");
     expect(deriveStatus(TEAM, "w1")).toBe("waiting");
   });
+  it("fires for codex, whose exec input is a source string", () => {
+    // Shape copied from a real trip log of a Codex session: name is `exec`
+    // and input is the JavaScript codex runs, with the command embedded.
+    initTeam(TEAM);
+    const roster = readTeam(TEAM)!;
+    roster.agents["w1"] = { role: "r", engine: "codex", session: "t-w1", cwd: "/" };
+    writeTeam(TEAM, roster);
+    const now = Math.floor(Date.now() / 1000);
+    mkdirSync(join(sessions, "t-w1"), { recursive: true });
+    writeFileSync(join(sessions, "t-w1", "log.jsonl"), [
+      JSON.stringify({ type: "agent_session_start", t: now - 100, continuation: "x" }),
+      JSON.stringify({ type: "agent_tool_call", t: now - 5, id: "call_x", name: "exec",
+        input: 'const r = await tools.exec_command({"cmd":"trip message wait","workdir":"/w"});\ntext(r.output);\n' }),
+    ].join("\n") + "\n");
+    expect(deriveStatus(TEAM, "w1")).toBe("waiting");
+  });
+  it("a codex exec that is not the wait loop stays working", () => {
+    initTeam(TEAM);
+    const roster = readTeam(TEAM)!;
+    roster.agents["w1"] = { role: "r", engine: "codex", session: "t-w1", cwd: "/" };
+    writeTeam(TEAM, roster);
+    const now = Math.floor(Date.now() / 1000);
+    mkdirSync(join(sessions, "t-w1"), { recursive: true });
+    writeFileSync(join(sessions, "t-w1", "log.jsonl"), [
+      JSON.stringify({ type: "agent_session_start", t: now - 100, continuation: "x" }),
+      JSON.stringify({ type: "agent_tool_call", t: now - 5, id: "call_y", name: "exec",
+        input: 'const r = await tools.exec_command({"cmd":"git status"});\n' }),
+    ].join("\n") + "\n");
+    expect(deriveStatus(TEAM, "w1")).toBe("working");
+  });
 });
 
 describe("agent.json repair timing", () => {

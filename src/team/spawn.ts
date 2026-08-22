@@ -168,13 +168,15 @@ const REGISTER_HOOK = "trip on >/dev/null 2>&1 || true";
  *  TOML on the command line, so tripping never edits ~/.codex/config.toml.
  *
  *  Codex gates a new or changed hook behind its own "Hooks need review"
- *  dialog, so the first spawn carrying this parks until a human answers it
- *  once. That is unavoidable from here and it is the right default — hooks
- *  run outside Codex's sandbox, which is precisely why `trip on` needs to be
- *  one: run from an ordinary Codex shell it fails with "Operation not
- *  permitted", because seatbelt denies the write to ~/.trip/sessions/.
- *  §8's guard detects that dialog, so the teammate parks visibly rather than
- *  being typed into. */
+ *  dialog, so an auto-tier spawn parks until a human answers it once. That is
+ *  a choice, not a limitation — `--dangerously-bypass-hook-trust` would skip
+ *  it — and the choice is deliberate: hooks run outside Codex's sandbox,
+ *  which is precisely why `trip on` needs to be one (from an ordinary Codex
+ *  shell it fails with "Operation not permitted", seatbelt denying the write
+ *  to ~/.trip/sessions/). Burning a real trust boundary by default is worse
+ *  than one human answer. The yolo tier passes the flag, because that tier
+ *  has already surrendered approvals and the sandbox. §8's guard detects the
+ *  dialog either way, so an auto-tier teammate parks visibly. */
 const CODEX_HOOK_CONFIG =
   `hooks.SessionStart=[{hooks=[{type="command",command=${JSON.stringify(REGISTER_HOOK)}}]}]`;
 
@@ -194,7 +196,18 @@ export function engineCommand(engine: Engine, yolo: boolean, prompt: string): st
   }
   return [
     "codex",
-    yolo ? "--dangerously-bypass-approvals-and-sandbox" : "--approve-for-me",
+    ...(yolo
+      ? [
+          "--dangerously-bypass-approvals-and-sandbox",
+          // Hook trust is a real boundary — hooks run outside the sandbox —
+          // so the auto tier keeps it and a Codex teammate parks once for a
+          // human to answer. The yolo tier has already given up approvals and
+          // the sandbox itself (§9); withholding hook trust there protects
+          // nothing that is left, and it would park the one tier whose whole
+          // point is running unattended.
+          "--dangerously-bypass-hook-trust",
+        ]
+      : ["--approve-for-me"]),
     "-c",
     CODEX_HOOK_CONFIG,
     prompt,

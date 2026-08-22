@@ -97,16 +97,23 @@ describe("engineCommand (§9 tiers)", () => {
     expect(engineCommand("claude", false, "p")).toEqual([
       "claude", "--permission-mode", "auto", "--plugin-dir", pluginDir(), "p",
     ]);
+    // The auto tier keeps hook trust: hooks run outside codex's sandbox, so
+    // it is a real boundary and the teammate parks once for a human instead.
     expect(engineCommand("codex", false, "p")).toEqual([
       "codex", "--approve-for-me", "-c", CODEX_HOOK, "p",
     ]);
+    expect(engineCommand("codex", false, "p")).not.toContain("--dangerously-bypass-hook-trust");
   });
   it("yolo tier", () => {
     expect(engineCommand("claude", true, "p")).toEqual([
       "claude", "--permission-mode", "bypassPermissions", "--plugin-dir", pluginDir(), "p",
     ]);
     expect(engineCommand("codex", true, "p")).toEqual([
-      "codex", "--dangerously-bypass-approvals-and-sandbox", "-c", CODEX_HOOK, "p",
+      "codex", "--dangerously-bypass-approvals-and-sandbox",
+      // yolo has already given up approvals and the sandbox, so withholding
+      // hook trust protects nothing and would park an unattended teammate.
+      "--dangerously-bypass-hook-trust",
+      "-c", CODEX_HOOK, "p",
     ]);
   });
   it("ships the plugin the hook and the skill live in", () => {

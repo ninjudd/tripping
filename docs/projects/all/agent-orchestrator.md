@@ -717,16 +717,29 @@ Neither engine's global configuration is touched, nothing persists after the
 session, and an operator who *has* configured the hook globally simply runs it
 twice, which is idempotent.
 
-**Claude registers unattended; Codex needs one human answer first.** Codex
-gates a new or changed hook behind a "Hooks need review" dialog, so the first
-spawn carrying tripping's hook parks until someone chooses *Trust all and
-continue*. There is no way around it from here, and it should not be worked
-around: hooks run *outside* Codex's sandbox, which is exactly why `trip on`
-has to be one. Run from an ordinary Codex shell it fails with `Operation not
-permitted` — seatbelt denies the write to `~/.trip/sessions/`. Only the yolo
-tier (§9), which disables the sandbox, can register from the shell instead.
-§8's guard detects that dialog, so a teammate waiting on it parks visibly and
-is never typed into.
+**Claude registers unattended; an auto-tier Codex teammate needs one human
+answer first.** Codex gates a new or changed hook behind a "Hooks need review"
+dialog, so the first auto-tier spawn carrying tripping's hook parks until
+someone chooses *Trust all and continue*.
+
+That is a decision rather than a limitation. `codex
+--dangerously-bypass-hook-trust` skips the gate, and its own help describes
+the intended user as "automation that already vets hook sources", which this
+is: the hook is a constant in this repository, shipped in the package, running
+one documented command. The auto tier declines it anyway, because hook trust
+is a real boundary — hooks run *outside* Codex's sandbox, which is exactly why
+`trip on` has to be one. Run from an ordinary Codex shell it fails with
+`Operation not permitted`; seatbelt denies the write to `~/.trip/sessions/`.
+Burning that boundary on every spawn is a worse trade than one human answer,
+once.
+
+**The yolo tier passes the flag**, because §9 says that tier has already
+surrendered approvals and the sandbox itself. Withholding hook trust there
+protects nothing the operator still has, and it would park the one tier whose
+entire purpose is running unattended.
+
+§8's guard detects the dialog either way, so an auto-tier teammate waiting on
+it parks visibly and is never typed into.
 
 **Why a plugin rather than an MCP server.** An MCP server was the obvious
 alternative and is the wrong shape here, for a reason specific to §6: `waiting`

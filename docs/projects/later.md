@@ -45,16 +45,28 @@ the
   check liveness against the daemon without parsing human-formatted output;
   until then `spawn.ts` shells out to `trip ls -a` and tolerates format
   drift.
-- **A failed spawn leaves its session and roster row behind.** `spawnTeammate`
-  writes the roster row and calls `trip create` before waiting on
-  registration, so a registration failure throws with the session live and the
-  row written. The teammate name stays held and the next `trip team spawn`
-  refuses it as already live. Recovery is `trip team kill <id>` and respawn;
-  the fix is either to unwind both on failure or to say so in the error.
-  Found by the first real spawn against a built trip — the failure that
-  surfaced it is fixed in
-  [`agent-orchestrator.md`](all/agent-orchestrator.md) §7, but the leftover
-  state is not.
+- **A failed spawn leaves its session and roster row behind — and the failure
+  can be a false negative.** `spawnTeammate` writes the roster row and calls
+  `trip create` before waiting on registration, so a registration failure
+  throws with the session live and the row written. The teammate name stays
+  held and the next `trip team spawn` refuses it as already live.
+
+  **Check before you kill.** `verifyAgentRegistration` polls for 15 seconds. A
+  writer parks at its engine's trust dialog before it can register, and a
+  human takes longer than that to answer, so the throw fires and the teammate
+  registers immediately afterwards and gets to work. On the writer path the
+  timeout is *expected* to lose, not unlucky — observed in §19. Run
+  `trip team ls` first: a teammate that registered late reads `working` or
+  `waiting`, and only a genuinely absent one is flagged `gone?`. Killing on
+  the error alone destroys a healthy teammate mid-task along with whatever it
+  has not committed.
+
+  Half of the fix has landed: the error now says which case it is, so it
+  tells you not to kill a live one (#21). What remains is unwinding the
+  session and the roster row on failure, so the name is not left held. A
+  blindly longer timeout stays the weaker option: 15 seconds is a bet that no
+  human is involved, and the right answer is to notice when one is. See
+  [`agent-orchestrator.md`](all/agent-orchestrator.md) §7 and §19.
 - **Writer worktrees land where neither engine trusts them.** §7 puts them at
   `~/.trip/teams/<team>/wt/<id>`, and both Claude and Codex gate an untrusted
   directory behind a prompt the teammate cannot answer — so every writer

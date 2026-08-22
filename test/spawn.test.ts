@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
 import {
   mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync,
-  existsSync, chmodSync, lstatSync, appendFileSync,
+  existsSync, chmodSync, lstatSync, appendFileSync, cpSync,
 } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -62,6 +62,26 @@ function markDead(session: string): void {
   }
 }
 
+
+/** A git repo costs three process spawns to create, and every test needed
+ *  one: ~290 execs across the suite. Build it once per file and copy it
+ *  in-process instead — three execs per file. Worth doing because an exec is
+ *  not free here (a machine running endpoint scanning pays per process), but
+ *  measure before blaming the suite for a slow run: it is 15s on an idle
+ *  machine and 80s on a loaded one, and load has dominated every time. */
+let repoTemplate: string;
+function makeRepoTemplate(): void {
+  repoTemplate = mkdtempSync(join(tmpdir(), "tripping-repo-template-"));
+  execFileSync("git", ["init", "-q", repoTemplate]);
+  writeFileSync(join(repoTemplate, "README.md"), "hi\n");
+  execFileSync("git", ["-C", repoTemplate, "add", "-A"]);
+  execFileSync("git", ["-C", repoTemplate, "-c", "user.email=t@t", "-c", "user.name=t",
+    "commit", "-qm", "init"]);
+}
+
+beforeAll(makeRepoTemplate);
+afterAll(() => rmSync(repoTemplate, { recursive: true, force: true }));
+
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "tripping-spawn-"));
   sessions = join(root, "sessions");
@@ -69,11 +89,7 @@ beforeEach(() => {
   repo = join(root, "repo");
   mkdirSync(sessions, { recursive: true });
   mkdirSync(stubDir, { recursive: true });
-  mkdirSync(repo, { recursive: true });
-  execFileSync("git", ["init", "-q", repo]);
-  writeFileSync(join(repo, "README.md"), "hi\n");
-  execFileSync("git", ["-C", repo, "add", "-A"]);
-  execFileSync("git", ["-C", repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"]);
+  cpSync(repoTemplate, repo, { recursive: true });
   process.env.TRIP_TEAMS_DIR = join(root, "teams");
   process.env.TRIP_SESSIONS_DIR = sessions;
   savedPath = process.env.PATH!;
@@ -384,14 +400,35 @@ describe("spawnTeammate (§7)", () => {
     expect(config.kind).toBe("claude");
     expect(config.log_path).toBe("/fake/transcript.jsonl"); // hook path kept
   });
-  it("fails loudly when agent.json never appears", async () => {
+  it("a dead session that never registered says the engine died", async () => {
     initTeam(TEAM);
-    // stub that creates the session but never writes agent.json
+    // creates the session directory but never writes agent.json, and never
+    // reports the name as live, so `ls` shows nothing.
     writeFileSync(join(stubDir, "trip"), `#!/bin/sh\nmkdir -p "${sessions}/$2"\n`);
     chmodSync(join(stubDir, "trip"), 0o755);
     await expect(
       spawnTeammate(TEAM, "w1", { role: "r", cwd: repo, registrationTimeoutMs: 1000 })
-    ).rejects.toThrow(/trip on did not fire/);
+    ).rejects.toThrow(/the session is gone/);
+  });
+  it("a live session that never registered says do not kill it", async () => {
+    // Observed live: a writer parked at its engine's trust dialog, the 15s
+    // registration poll lost the race against the human answering it, and the
+    // teammate registered and started work immediately after the throw.
+    // later.md used to tell the operator to kill and respawn here, which
+    // would have destroyed a healthy teammate mid-task.
+    initTeam(TEAM);
+    writeFileSync(join(stubDir, "trip"),
+      `#!/bin/sh\ncase "$1" in\n  create) mkdir -p "${sessions}/$2"; echo "$2" >> "${stubDir}/live.txt" ;;\n` +
+      `  ls) cat "${stubDir}/live.txt" 2>/dev/null || true ;;\nesac\n`);
+    chmodSync(join(stubDir, "trip"), 0o755);
+    // One attempt only: the session it leaves behind is live, so a second
+    // call is refused by the already-live gate before it can reach this path.
+    const err = await spawnTeammate(TEAM, "w1", {
+      role: "r", cwd: repo, registrationTimeoutMs: 1000,
+    }).catch((e: Error) => e);
+    expect(err.message).toMatch(/waiting at a prompt/);
+    expect(err.message).toMatch(/Do NOT kill it/);
+    expect(err.message).toMatch(/trip team ls/);
   });
 });
 

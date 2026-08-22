@@ -133,7 +133,12 @@ takes `--model`/`--effort`, effort validated against its enum; codex takes
 `-m` and `-c model_reasoning_effort=…`, the effort value passed through
 unvalidated — whether codex rejects or silently ignores an unknown value is
 unconfirmed, so `team ls` shows the tuning a teammate was asked for), with
-each engine's defaults applying when unset. `spawn` can refuse —
+each engine's defaults applying when unset. That last clause holds only once
+spawn scrubs the coordinator's own engine variables from the inherited
+environment (#10): `trip create` passes the caller's whole environment, the
+caller is itself an engine session, and an inherited `CLAUDE_MODEL` or
+`CLAUDE_EFFORT` would otherwise outrank the engine's defaults — and must
+never outrank an explicit flag. `spawn` can refuse —
 on the caller, the population cap, or a missing or corrupt `team.json` — and
 every refusal names its recovery command (§16). `respawn` recycles an
 identity (§14); `requeue` revives a parked task (§15); `start` launches the
@@ -523,10 +528,10 @@ teammate is reassigned to unrelated work, when it observes degradation, or when
 a teammate self-reports a bad compaction (`message send coordinator --kind
 control`). The boundary for a deliberate respawn is the result message for the
 last dispatched task having arrived, matched by thread — not derived status,
-which cannot confirm idleness for a Codex teammate until trip#3 lands (§6). Incarnations share the
-mailbox, so messages landing during the respawn window simply wait in
-`inbox/`. When no inherited context is wanted at all, kill and spawn a new id
-instead.
+which cannot confirm idleness for a Codex teammate until trip#3 lands (§6).
+Incarnations share the mailbox, so messages landing during the respawn window
+simply wait in `inbox/`. When no inherited context is wanted at all, kill and
+spawn a new id instead.
 
 Every respawn writes a restart notice — an ordinary `kind: control` message
 from `tripping` carrying `--reason` — into the fresh incarnation's inbox, so

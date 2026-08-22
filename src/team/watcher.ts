@@ -38,9 +38,16 @@ const TAIL_LINES = 12;
 /** The engines do not agree on the glyph. Claude renders its selector as ❯
  *  (U+276F), Codex as › (U+203A) — a real Codex approval prompt read as
  *  unparked until this class covered both, and the watcher would have typed
- *  a doorbell straight into it. Kept to the arrow-like glyphs a TUI actually
- *  draws; never ASCII '>', which is a shell prompt and a quoted command. */
-const SELECTOR = "[❯›▸‣⯈]";
+ *  a doorbell straight into it.
+ *
+ *  Only glyphs an engine has been *seen* drawing belong here. ▸ ‣ ⯈ were in
+ *  an earlier version on the theory that they were selector-shaped, and they
+ *  are what an agent reaches for when it writes a bullet list: "▸ 1. rebase"
+ *  at the end of a turn parked a healthy teammate through the numbered-choice
+ *  signature. Never ASCII '>' either — that is a shell prompt and the start
+ *  of a quoted command. When an engine turns up drawing another glyph, add it
+ *  with the screen that showed it. */
+const SELECTOR = "[❯›]";
 
 const STRONG_SIGNATURES = [
   /do you want/i,

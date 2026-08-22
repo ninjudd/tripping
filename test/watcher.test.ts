@@ -396,6 +396,11 @@ describe("screen guard", () => {
       "Done. The CI job will allow deploys to production once green.",
       "Summary: 3 files changed. Next: ask the reviewer to approve.",
       '> git commit -m "allow admins to bypass the cache"',
+      // Triangle bullets are how agents write a to-do list at the end of a
+      // turn — exactly the tail this guard reads. An earlier selector class
+      // included them and parked healthy teammates on lists like these.
+      "Next steps:\n\u25b8 1. rebase\n\u25b8 2. push",
+      "\u2023 we should allow admins to bypass the cache",
     ]) {
       setScreen("t-x", text);
       expect(screenParked("t-x"), text).toBe(false);
@@ -407,7 +412,6 @@ describe("screen guard", () => {
     const screens = [
       "Do you want to proceed?\n❯ 1. Yes\n  2. No",
       "trust the files in this folder?\n› 1. Yes, continue\n  2. No, quit",
-      "Approve this?\n▸ 1. Yes\n  2. No",
     ];
     for (const s of screens) {
       setScreen("t-x", s);

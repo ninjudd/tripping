@@ -521,8 +521,8 @@ control`). The boundary for a deliberate respawn is the result message for the
 last dispatched task having arrived, matched by thread — not derived status,
 which cannot confirm idleness for a Codex teammate until trip#3 lands (§6).
 Incarnations share the mailbox, so messages landing during the respawn window
-simply wait in `inbox/`. When no inherited context is wanted at all, kill and spawn a new id
-instead.
+simply wait in `inbox/`. When no inherited context is wanted at all, kill and
+spawn a new id instead.
 
 Every respawn writes a restart notice — an ordinary `kind: control` message
 from `tripping` carrying `--reason` — into the fresh incarnation's inbox, so

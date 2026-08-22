@@ -174,7 +174,7 @@ async function main(): Promise<void> {
           : "?";
         const mail = `${count(inboxDir(team, id))} in / ${count(workingDir(team, id))} held / ${count(deadDir(team, id))} dead`;
         process.stdout.write(
-          `  ${id.padEnd(14)} ${(row.engine + (row.model ? `/${row.model}` : "")).padEnd(14)} ${String(status).padEnd(8)} ` +
+          `  ${id.padEnd(14)} ${(row.engine + (row.model ? `/${row.model}` : "") + (row.effort ? ` ${row.effort}` : "")).padEnd(14)} ${String(status).padEnd(8)} ` +
             `age ${age.padEnd(7)} spawns ${String(row.spawns ?? 1).padEnd(3)} ${mail}  ${row.role}` +
             (gone ? `  [session gone — trip team kill ${id}]` : "") +
             "\n"

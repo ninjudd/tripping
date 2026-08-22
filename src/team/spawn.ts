@@ -38,7 +38,10 @@ export interface SpawnOptions {
   yolo?: boolean;
   /** Engine model: an alias (opus, sonnet, fable, o3, …) or a full name. */
   model?: string;
-  /** Reasoning effort. Claude enumerates its levels; codex validates its own. */
+  /** Reasoning effort. Claude's levels are validated against its enum;
+   *  codex gets the value passed through UNVALIDATED — whether codex
+   *  rejects or silently ignores an unknown value is unconfirmed, which is
+   *  why team ls displays effort: the operator can see what was asked. */
   effort?: string;
   /** Set by the Phase 3 watcher; the CLI always passes false. */
   auto?: boolean;
@@ -288,7 +291,9 @@ export async function verifyAgentRegistration(
     }
     if (Date.now() >= deadline) {
       throw new Error(
-        `agent.json never appeared for ${session} — trip on did not fire. ` +
+        `agent.json never appeared for ${session} — either trip on did not ` +
+          `fire, or the engine died at launch (a mistyped --model fails ` +
+          `there, not here): check trip screen ${session} first. ` +
           `Is the SessionStart hook configured? Autopsy: trip log ${session}`
       );
     }

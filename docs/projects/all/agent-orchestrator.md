@@ -128,9 +128,11 @@ Every command that launches an engine carries an autonomy tier (§9): the
 default is auto, and `--yolo` opts into the bypass tier. Model and reasoning
 effort are per-teammate the same way — `--model` and `--effort` on `spawn`
 and `start`, persisted on the roster row so a respawn replays them (claude
-takes `--model`/`--effort`; codex takes `-m` and
-`-c model_reasoning_effort=…`), with each engine's defaults applying when
-unset. `spawn` can refuse —
+takes `--model`/`--effort`, effort validated against its enum; codex takes
+`-m` and `-c model_reasoning_effort=…`, the effort value passed through
+unvalidated — whether codex rejects or silently ignores an unknown value is
+unconfirmed, so `team ls` shows the tuning a teammate was asked for), with
+each engine's defaults applying when unset. `spawn` can refuse —
 on the caller, the population cap, or a missing or corrupt `team.json` — and
 every refusal names its recovery command (§16). `respawn` recycles an
 identity (§14); `requeue` revives a parked task (§15); `start` launches the

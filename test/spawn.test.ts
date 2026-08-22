@@ -8,7 +8,8 @@ import { join } from "path";
 import { execFileSync } from "child_process";
 import {
   initTeam, checkSpawn, spawnTeammate, killTeammate, engineCommand,
-  verifyAgentRegistration, sessionAlive,
+  verifyAgentRegistration, sessionAlive, teammateEnv,
+  AGENT_ENV_PATTERN, INHERITED_AGENT_CONFIG,
 } from "../src/team/spawn.js";
 import { readTeam, writeTeam, DEFAULT_LIMITS } from "../src/team/roster.js";
 import { deriveStatus } from "../src/team/status.js";
@@ -180,6 +181,67 @@ describe("init and step-0 checks (§16)", () => {
     }
     writeTeam(TEAM, roster);
     expect(() => checkSpawn(TEAM, "coordinator", { asCoordinator: true })).not.toThrow();
+  });
+});
+
+describe("teammateEnv: the coordinator's own markers never reach a teammate", () => {
+  it("drops the parent agent's session identity and IPC channel", () => {
+    // A coordinator is itself a Claude or Codex CLI, and trip create hands
+    // the child the caller's whole environment. Every key below was observed
+    // leaking into a real spawned teammate.
+    const saved = { ...process.env };
+    Object.assign(process.env, {
+      CLAUDE_CODE_CHILD_SESSION: "1",
+      CLAUDE_CODE_SESSION_ID: "parent-session",
+      CLAUDE_CODE_MESSAGING_SOCKET: "/tmp/parent.sock",
+      CLAUDE_CODE_MESSAGING_TOKEN: "secret",
+      CLAUDECODE: "1",
+      CLAUDE_EFFORT: "xhigh",
+      CODEX_THREAD_ID: "parent-thread",
+    });
+    try {
+      const env = teammateEnv("t", "w1");
+      for (const key of [
+        "CLAUDE_CODE_CHILD_SESSION",
+        "CLAUDE_CODE_SESSION_ID",
+        "CLAUDE_CODE_MESSAGING_SOCKET",
+        "CLAUDE_CODE_MESSAGING_TOKEN",
+        "CLAUDECODE",
+        "CLAUDE_EFFORT",
+        "CODEX_THREAD_ID",
+      ]) {
+        expect(env[key], key).toBeUndefined();
+      }
+      // Everything else still comes through — a teammate needs the caller's
+      // PATH and credentials to run at all.
+      expect(env.PATH).toBe(process.env.PATH);
+      expect(env.TRIP_TEAM).toBe("t");
+      expect(env.TRIP_AGENT).toBe("w1");
+    } finally {
+      for (const k of Object.keys(process.env)) delete process.env[k];
+      Object.assign(process.env, saved);
+    }
+  });
+
+  it("leaves no agent variable of this real session unaccounted for", () => {
+    // The list in spawn.ts is hand-maintained over someone else's
+    // environment, and the test above can only check it against itself. This
+    // one checks it against reality: every CLAUDE*/CODEX_* variable actually
+    // present must be either scrubbed or a deliberate keep. When an engine
+    // adds a marker, this fails and someone decides which it is.
+    const present = Object.keys(process.env).filter((k) =>
+      AGENT_ENV_PATTERN.test(k)
+    );
+    if (present.length === 0) return; // not running inside an agent session
+    const env = teammateEnv("t", "w1");
+    const leaked = present.filter(
+      (k) => env[k] !== undefined && !INHERITED_AGENT_CONFIG.includes(k)
+    );
+    expect(
+      leaked,
+      `unaccounted agent variables — scrub them in INHERITED_AGENT_MARKERS, ` +
+        `or add them to INHERITED_AGENT_CONFIG if a teammate needs them`
+    ).toEqual([]);
   });
 });
 

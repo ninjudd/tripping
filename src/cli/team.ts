@@ -160,6 +160,15 @@ async function main(): Promise<void> {
       process.stdout.write(
         `team ${team} — ${live}/${roster.limits.max_agents} teammates live (limits: team.json)\n`
       );
+      // Size the id and engine/tuning columns from the rows, the way
+      // trip's own ls does — a tuned row (`claude/opus high`) outgrows any
+      // fixed constant eventually.
+      const engineCell = (row: (typeof rows)[number][1]) =>
+        row.engine +
+        (row.model ? `/${row.model}` : "") +
+        (row.effort ? ` ${row.effort}` : "");
+      const idWidth = Math.max(14, ...rows.map(([id]) => id.length));
+      const engineWidth = Math.max(6, ...rows.map(([, r]) => engineCell(r).length));
       for (const [id, row] of rows) {
         // §16: flag a roster/daemon mismatch — the roster says live but the
         // daemon has no such session.
@@ -174,7 +183,7 @@ async function main(): Promise<void> {
           : "?";
         const mail = `${count(inboxDir(team, id))} in / ${count(workingDir(team, id))} held / ${count(deadDir(team, id))} dead`;
         process.stdout.write(
-          `  ${id.padEnd(14)} ${(row.engine + (row.model ? `/${row.model}` : "") + (row.effort ? ` ${row.effort}` : "")).padEnd(14)} ${String(status).padEnd(8)} ` +
+          `  ${id.padEnd(idWidth)} ${engineCell(row).padEnd(engineWidth)} ${String(status).padEnd(8)} ` +
             `age ${age.padEnd(7)} spawns ${String(row.spawns ?? 1).padEnd(3)} ${mail}  ${row.role}` +
             (gone ? `  [session gone — trip team kill ${id}]` : "") +
             "\n"

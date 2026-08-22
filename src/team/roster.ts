@@ -25,12 +25,55 @@ export interface Team {
 export const DEFAULT_LIMITS = { max_agents: 4, max_respawns: 3 };
 
 export function readTeam(team: string): Team | null {
+  let raw: string;
   try {
-    return JSON.parse(readFileSync(teamJsonPath(team), "utf8")) as Team;
+    raw = readFileSync(teamJsonPath(team), "utf8");
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw err; // corrupt team.json fails closed, never silently
+    throw err;
   }
+  let parsed: Team;
+  try {
+    parsed = JSON.parse(raw) as Team;
+  } catch {
+    // Fails closed, naming the path and the recovery (§7 step 0).
+    throw new Error(
+      `team.json for '${team}' is corrupt at ${teamJsonPath(team)} — ` +
+        `fix it by hand, or move it aside and rerun: trip team init ${team}`
+    );
+  }
+  // A hand-built file missing limits gets the defaults written back,
+  // with a note (§16); agents likewise normalizes to an empty roster.
+  let repaired = false;
+  if (!parsed.agents || typeof parsed.agents !== "object") {
+    parsed.agents = {};
+    repaired = true;
+  }
+  if (!parsed.limits || typeof parsed.limits !== "object") {
+    parsed.limits = { ...DEFAULT_LIMITS };
+    repaired = true;
+  } else {
+    // Replace offending fields individually — spreading a known-bad object
+    // over the defaults puts the bad value back on top.
+    for (const field of ["max_agents", "max_respawns"] as const) {
+      const value = parsed.limits[field];
+      if (!Number.isInteger(value) || (value as number) <= 0) {
+        parsed.limits[field] = DEFAULT_LIMITS[field];
+        repaired = true;
+      }
+    }
+  }
+  if (!parsed.coordinator) {
+    parsed.coordinator = "coordinator";
+    repaired = true;
+  }
+  if (repaired) {
+    writeTeam(team, parsed);
+    process.stderr.write(
+      `note: team.json for '${team}' was missing fields; defaults written back\n`
+    );
+  }
+  return parsed;
 }
 
 /** All team.json writes stage in tmp/ and land by rename, like the maildir. */

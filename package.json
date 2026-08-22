@@ -21,7 +21,8 @@
   },
   "bin": {
     "trip-message": "dist/cli/message.js",
-    "trip-msg": "dist/cli/message.js"
+    "trip-msg": "dist/cli/message.js",
+    "trip-team": "dist/cli/team.js"
   },
   "files": [
     "dist"

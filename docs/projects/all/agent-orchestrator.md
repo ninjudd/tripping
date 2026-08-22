@@ -795,7 +795,11 @@ the stub and reality disagreed, and the suite believed the stub:
 
 The last two are the instructive ones: a stub that is wrong about a *message
 format* is more dangerous than no stub, because it makes the suite agree with
-the bug. Fixing the kill message alone turned six passing tests red.
+the bug. Correcting the two stubs to print what trip prints, and changing
+nothing else, turns **12 passing tests red** on `0a1ff01` — across `kill`,
+§17's already-live gate, §16's breaker and §15's respawn sequence. The base
+matters to that count and it is worth re-measuring rather than quoting:
+the same experiment on `87dd48e` gives 11.
 
 **Two gates neither engine lets an orchestrator past.** Both Claude and Codex
 refuse an untrusted directory, and Codex separately refuses an untrusted hook.

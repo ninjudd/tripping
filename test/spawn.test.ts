@@ -100,6 +100,22 @@ describe("engineCommand (§9 tiers)", () => {
     expect(engineCommand("claude", true, "p")).toEqual(["claude", "--permission-mode", "bypassPermissions", "p"]);
     expect(engineCommand("codex", true, "p")).toEqual(["codex", "--dangerously-bypass-approvals-and-sandbox", "p"]);
   });
+  it("model and effort ride along, tier flags first and prompt last", () => {
+    expect(engineCommand("claude", false, "p", { model: "opus", effort: "high" })).toEqual([
+      "claude", "--permission-mode", "auto", "--model", "opus", "--effort", "high", "p",
+    ]);
+    expect(engineCommand("codex", true, "p", { model: "o3", effort: "high" })).toEqual([
+      "codex", "--dangerously-bypass-approvals-and-sandbox",
+      "-m", "o3", "-c", "model_reasoning_effort=high", "p",
+    ]);
+    expect(engineCommand("claude", false, "p", { model: "claude-fable-5" })).toContain("claude-fable-5");
+  });
+  it("claude effort is validated against its own enum; codex passes lowercase through", () => {
+    expect(() => engineCommand("claude", false, "p", { effort: "extreme" })).toThrow(/one of: low/);
+    expect(() => engineCommand("codex", false, "p", { effort: "minimal" })).not.toThrow();
+    expect(() => engineCommand("codex", false, "p", { effort: "High Effort" })).toThrow(/invalid effort/);
+    expect(() => engineCommand("claude", false, "p", { model: "bad model name" })).toThrow(/invalid model/);
+  });
 });
 
 describe("init and step-0 checks (§16)", () => {
@@ -252,6 +268,32 @@ describe("spawnTeammate (§7)", () => {
       expect(text).not.toContain("AGENTS.md");
       expect(text).not.toContain(".tripping");
     }
+  });
+  it("persists model and effort on the roster row and passes them to trip create", async () => {
+    initTeam(TEAM);
+    await spawnTeammate(TEAM, "w1", {
+      role: "r", cwd: repo, engine: "claude", model: "opus", effort: "xhigh",
+    });
+    const row = readTeam(TEAM)!.agents["w1"];
+    expect(row.model).toBe("opus");
+    expect(row.effort).toBe("xhigh");
+    const log = readFileSync(join(stubDir, "calls.log"), "utf8");
+    expect(log).toContain("--model opus --effort xhigh");
+  });
+  it("codex gets tuning in its own dialect", async () => {
+    initTeam(TEAM);
+    await spawnTeammate(TEAM, "w1", {
+      role: "r", cwd: repo, engine: "codex", model: "o3", effort: "medium",
+    });
+    const log = readFileSync(join(stubDir, "calls.log"), "utf8");
+    expect(log).toContain("-m o3 -c model_reasoning_effort=medium");
+  });
+  it("bad tuning fails before any side effect", async () => {
+    initTeam(TEAM);
+    await expect(
+      spawnTeammate(TEAM, "w1", { role: "r", cwd: repo, effort: "extreme" })
+    ).rejects.toThrow(/one of: low/);
+    expect(readTeam(TEAM)!.agents["w1"]).toBeUndefined();
   });
   it("writer roles get a worktree, branch, contract copy, and AGENTS.md", async () => {
     initTeam(TEAM);

@@ -133,7 +133,12 @@ takes `--model`/`--effort`, effort validated against its enum; codex takes
 `-m` and `-c model_reasoning_effort=…`, the effort value passed through
 unvalidated — whether codex rejects or silently ignores an unknown value is
 unconfirmed, so `team ls` shows the tuning a teammate was asked for), with
-each engine's defaults applying when unset. `spawn` can refuse —
+each engine's defaults applying when unset. That last clause holds only once
+spawn scrubs the coordinator's own engine variables from the inherited
+environment (#10): `trip create` passes the caller's whole environment, the
+caller is itself an engine session, and an inherited `CLAUDE_MODEL` or
+`CLAUDE_EFFORT` would otherwise outrank the engine's defaults — and must
+never outrank an explicit flag. `spawn` can refuse —
 on the caller, the population cap, or a missing or corrupt `team.json` — and
 every refusal names its recovery command (§16). `respawn` recycles an
 identity (§14); `requeue` revives a parked task (§15); `start` launches the

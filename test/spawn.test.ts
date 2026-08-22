@@ -8,7 +8,7 @@ import { join } from "path";
 import { execFileSync } from "child_process";
 import {
   initTeam, checkSpawn, spawnTeammate, killTeammate, engineCommand,
-  verifyAgentRegistration, sessionAlive,
+  verifyAgentRegistration, sessionAlive, teammateEnv,
 } from "../src/team/spawn.js";
 import { readTeam, writeTeam, DEFAULT_LIMITS } from "../src/team/roster.js";
 import { deriveStatus } from "../src/team/status.js";
@@ -164,6 +164,46 @@ describe("init and step-0 checks (§16)", () => {
     }
     writeTeam(TEAM, roster);
     expect(() => checkSpawn(TEAM, "coordinator", { asCoordinator: true })).not.toThrow();
+  });
+});
+
+describe("teammateEnv: the coordinator's own markers never reach a teammate", () => {
+  it("drops the parent agent's session identity and IPC channel", () => {
+    // A coordinator is itself a Claude or Codex CLI, and trip create hands
+    // the child the caller's whole environment. Every key below was observed
+    // leaking into a real spawned teammate.
+    const saved = { ...process.env };
+    Object.assign(process.env, {
+      CLAUDE_CODE_CHILD_SESSION: "1",
+      CLAUDE_CODE_SESSION_ID: "parent-session",
+      CLAUDE_CODE_MESSAGING_SOCKET: "/tmp/parent.sock",
+      CLAUDE_CODE_MESSAGING_TOKEN: "secret",
+      CLAUDECODE: "1",
+      CLAUDE_EFFORT: "xhigh",
+      CODEX_THREAD_ID: "parent-thread",
+    });
+    try {
+      const env = teammateEnv("t", "w1");
+      for (const key of [
+        "CLAUDE_CODE_CHILD_SESSION",
+        "CLAUDE_CODE_SESSION_ID",
+        "CLAUDE_CODE_MESSAGING_SOCKET",
+        "CLAUDE_CODE_MESSAGING_TOKEN",
+        "CLAUDECODE",
+        "CLAUDE_EFFORT",
+        "CODEX_THREAD_ID",
+      ]) {
+        expect(env[key], key).toBeUndefined();
+      }
+      // Everything else still comes through — a teammate needs the caller's
+      // PATH and credentials to run at all.
+      expect(env.PATH).toBe(process.env.PATH);
+      expect(env.TRIP_TEAM).toBe("t");
+      expect(env.TRIP_AGENT).toBe("w1");
+    } finally {
+      for (const k of Object.keys(process.env)) delete process.env[k];
+      Object.assign(process.env, saved);
+    }
   });
 });
 

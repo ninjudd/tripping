@@ -71,6 +71,49 @@ function tripErrorText(err: unknown): string {
 /** Liveness comes from trip's session list, never from files — the session
  *  directory outlives every kill and crash (trip-primitives.md). Parsed
  *  tolerantly: the name appearing as a token means alive. */
+/**
+ * The coordinator is itself a Claude or Codex CLI, and `trip create` hands the
+ * child the caller's whole environment (docs/trip-primitives.md). So a
+ * teammate spawned by a coordinator inherits the coordinator's own agent
+ * markers, and three of them are actively harmful:
+ *
+ *   CLAUDE_CODE_CHILD_SESSION  the child disables transcript saving, so there
+ *                              is no transcript for `trip on` to register and
+ *                              every spawn fails registration
+ *   CLAUDE_CODE_SESSION_ID     `trip on` resolves the *coordinator's* session
+ *   CODEX_THREAD_ID            (client/mod.rs:626,635), registering the
+ *                              teammate against its manager's transcript —
+ *                              §6 would then derive the teammate's status from
+ *                              the coordinator's events, silently
+ *   CLAUDE_CODE_MESSAGING_*    the parent's IPC socket and its auth token
+ *
+ * A teammate is a fresh agent, not a child of the coordinator's session, so
+ * the whole family is dropped and each engine re-establishes its own.
+ */
+const INHERITED_AGENT_MARKERS = [
+  "CLAUDE_CODE_CHILD_SESSION",
+  "CLAUDE_CODE_SESSION_ID",
+  "CLAUDE_CODE_ENTRYPOINT",
+  "CLAUDE_CODE_EXECPATH",
+  "CLAUDE_CODE_MESSAGING_SOCKET",
+  "CLAUDE_CODE_MESSAGING_TOKEN",
+  "CLAUDE_PID",
+  "CLAUDECODE",
+  // The tier and tuning are decided per teammate at spawn (§9), so an
+  // inherited value must not quietly outrank the flag that was passed.
+  "CLAUDE_EFFORT",
+  "CLAUDE_MODEL",
+  "CODEX_THREAD_ID",
+];
+
+/** The environment a spawned teammate gets: the caller's, minus the caller's
+ *  own agent identity, plus this teammate's. */
+export function teammateEnv(team: string, id: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const key of INHERITED_AGENT_MARKERS) delete env[key];
+  return { ...env, TRIP_TEAM: team, TRIP_AGENT: id };
+}
+
 export function sessionAlive(session: string): boolean {
   let out: string;
   try {
@@ -361,7 +404,7 @@ export async function spawnTeammate(
     opts.prompt ?? teammatePrompt(team, id, opts.role, protocolRef);
   tripExec(["create", session, "--", ...engineCommand(engine, !!opts.yolo, prompt)], {
     cwd,
-    env: { ...process.env, TRIP_TEAM: team, TRIP_AGENT: id },
+    env: teammateEnv(team, id),
   });
 
   await verifyAgentRegistration(session, engine, opts.registrationTimeoutMs);

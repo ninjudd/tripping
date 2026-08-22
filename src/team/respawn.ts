@@ -21,6 +21,7 @@ import {
   tripExec,
   tripKillTolerant,
   sessionAlive,
+  teammateEnv,
   verifyAgentRegistration,
 } from "./spawn.js";
 import { deriveStatus, sessionName } from "./status.js";
@@ -285,7 +286,7 @@ export async function respawnTeammate(
     ["create", session, "--", ...engineCommand(row.engine, !!row.yolo, prompt)],
     {
       cwd: row.cwd,
-      env: { ...process.env, TRIP_TEAM: team, TRIP_AGENT: id },
+      env: teammateEnv(team, id),
     }
   );
 

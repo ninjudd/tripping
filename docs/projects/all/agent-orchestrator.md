@@ -533,8 +533,13 @@ durable — the sweep below dedups it; the reverse order could close a task whos
 result was never sent. Non-task messages archive on read, deliberately
 at-most-once: an answer read by a dead incarnation is gone, and the fresh one
 re-asks. If `--thread` is missing and exactly one task is in `working/`, the
-send closes it with a printed warning; if several are, it closes nothing and
-prints the listing so the agent self-corrects.
+result inherits that task's thread before delivery — the envelope and the
+close never disagree — and closes it with a printed warning; if several are,
+the send is refused with the in-flight listing, so a result nothing can
+correlate never enters a mailbox and the agent re-sends with the thread. A
+recipient the roster does not know still gets a mailbox — mail queues ahead
+of a spawn — but the send warns, since a typo'd id is the likeliest way a
+message goes missing in normal use.
 
 Death detection uses trip's session list — Exited or missing — never a
 timeout and never the log tail, because a killed CLI never logs

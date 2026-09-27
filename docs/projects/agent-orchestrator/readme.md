@@ -1,9 +1,29 @@
 ---
-status: Active
-owner: justin.balthrop
+status: in-progress
+priority: now
 ---
 
 # Turn tripping into an agent orchestrator
+
+**Status:** A coordinator agent in a `trip` session spawns and directs
+teammates, each its own Claude or Codex CLI in its own session, talking over a
+durable on-disk message bus. The plan's three open questions are resolved
+(§14 lifetime, §15 task custody and re-delivery, §16 population limits), every
+launch carries an autonomy tier (§9). Phases 1 to 3 are merged — the bus,
+spawning and status, the watcher — and the first run against a real `trip` is
+done: a coordinator dispatched to two Claude teammates and joined both results
+in 32.5 seconds (§19). That run turned up five defects a stubbed `trip` could
+not have shown: three fixed here, and two open in trip —
+[trip#2](https://github.com/ninjudd/trip/pull/2) for the hook's agent kind
+and [trip#3](https://github.com/ninjudd/trip/pull/3) for
+`custom_tool_call`. There is no tripping-side workaround for either; the
+registration hook runs a bare `trip on`. All four phases are done, branch
+integration included: two writers on separate worktrees, both branches
+merged. One question is open and it is the plan owner's — where a writer's
+worktree should live, since both engines refuse an untrusted directory and
+`~/.trip/teams/<team>/wt/<id>` is one, so each writer needs a single human
+answer at spawn until it is settled
+([`writer-worktree-siting`](../writer-worktree-siting/readme.md)).
 
 You start a coordinator — Claude or Codex — in a `trip` session. It spawns
 teammates, each its own Claude or Codex CLI in its own `trip` session, and
@@ -26,8 +46,10 @@ In: the message bus, the CLI verbs, spawning and observing teammates, and
 a worked proof of a coordinator running two teammates to completion.
 
 Out: the chat frontends. `src/telegram/` and `src/discord/` stay untouched until
-the protocol settles, so they get rewritten once rather than twice. They are on
-[`later.md`](../later.md), along with an MCP surface and a headless backend.
+the protocol settles, so they get rewritten once rather than twice. They are a later project,
+[`team-frontends`](../team-frontends/readme.md), along with an
+[MCP surface](../mcp-surface/readme.md) and a
+[headless backend](../agent-sdk-backend/readme.md).
 
 ## 2. Why the inbox and the doorbell are both needed
 
@@ -147,8 +169,8 @@ coordinator itself (§17).
 A CLI rather than an MCP server, for now: one implementation serves both
 engines, you can drive it by hand from any shell to debug a stuck team, and
 there is no per-engine MCP config to bootstrap on every spawn. An MCP surface
-over the same core is worth having once the protocol stops moving, and it is on
-[`later.md`](../later.md).
+over the same core is worth having once the protocol stops moving, and it is a later project,
+[`mcp-surface`](../mcp-surface/readme.md).
 
 ## 5. Message model
 
@@ -425,8 +447,8 @@ trivial — teammates become function calls and the bus becomes an event stream.
 It costs the human-attachable terminal, the real CLI's skills, hooks, MCP
 config and permission handling, and subscription auth. The attachable terminal
 is the reason this project exists, so the trade is not close. agent-sdk stays
-interesting for roles that never need a terminal; that is on
-[`later.md`](../later.md).
+interesting for roles that never need a terminal; that is a later project,
+[`agent-sdk-backend`](../agent-sdk-backend/readme.md).
 
 **The bus lives in tripping, not in trip.** Putting the bus in trip would give
 it one binary already on every agent's `PATH`, a blocking wait riding the
@@ -446,7 +468,8 @@ engine can be preempted from outside mid-turn — so any budget tripping
 claimed to enforce would be fiction, and a recorded-but-unenforced number is
 worse than none. The enforceable proxies are concurrent teammates and
 consecutive crash respawns, and §16 enforces exactly those.
-Transcript-parsing usage recorders are on [`later.md`](../later.md) as
+Transcript-parsing usage recorders are a later project,
+[`usage-recorders`](../usage-recorders/readme.md), as
 observability, never enforcement.
 
 **One command, two packages.** The verbs live under `trip` — `trip team`,
@@ -487,8 +510,8 @@ claim — acceptable with both packages under one owner.
    results, and integrates the branches. Done — recorded in §19, including
    the writer path with worktrees and branch integration. One caveat stands:
    a writer's worktree lands where neither engine trusts it, so each one
-   needs a single human answer at spawn until the siting question on
-   [`later.md`](../later.md) is decided.
+   needs a single human answer at spawn until the siting question in
+   [`writer-worktree-siting`](../writer-worktree-siting/readme.md) is decided.
 
 ## 13. Open questions
 
@@ -663,7 +686,7 @@ the escalation (`trip message send coordinator --kind question`). Teammates
 spawning sub-teams is rejected for v1 — every downstream mechanism, from §3's
 loop to §8's doorbell to §11's integration to the flat `agents/` tree,
 assumes a one-level team, and the escalation path costs one message. Sub-teams
-are on [`later.md`](../later.md).
+are a later project, [`sub-teams`](../sub-teams/readme.md).
 
 `trip team init` writes the defaults into `team.json` — coordinator id,
 `limits {max_agents, max_respawns}` — so the file never lies about what
@@ -854,12 +877,13 @@ engine's trust dialog on first spawn and needed a human to answer it, because
 §7 sites worktrees under `~/.trip/teams/<team>/wt/<id>`, which no engine has
 trusted. Answering it is a legitimate operator decision about a directory the
 operator's own team just created — but it must be a person, and until the
-siting question on [`later.md`](../later.md) is settled, the writer path is
+siting question in [`writer-worktree-siting`](../writer-worktree-siting/readme.md) is settled, the writer path is
 not unattended.
 
 One incidental confirmation: the second writer's spawn *reported* a
 registration failure and was in fact running and working the whole time. That
-is the leftover-session finding on `later.md`, observed rather than reasoned
+is the leftover-session finding in
+[`failed-spawn-cleanup`](../failed-spawn-cleanup/readme.md), observed rather than reasoned
 about — the throw does not mean the teammate is absent.
 
 **Five defects that the stub could not have surfaced.** Each is a case where

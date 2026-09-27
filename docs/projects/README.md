@@ -1,64 +1,47 @@
-# Projects
+# Project plans
 
 `docs/` describes how the system works today. `docs/projects/` is the work
 itself.
 
-Three lists say what is happening and when:
+This directory follows the [Projector](https://github.com/ninjudd/projector)
+convention. Store each project in a permanent directory under `docs/projects/`.
+Use a lowercase `readme.md` entry point with YAML frontmatter carrying two
+fields: `status: draft|ready|in-progress|completed` records the lifecycle, and
+`priority: now|next|later` records when the work should happen. Priority is
+required unless the status is `completed`. Nest a project directory inside
+another project when the work is a subproject. Keep supplemental files beside
+the entry point that owns them.
 
-- [`now.md`](now.md) — in flight.
-- [`next.md`](next.md) — queued, starting soon.
-- [`later.md`](later.md) — wanted, not scheduled.
+Status and priority changes edit frontmatter. Do not create shared queue
+files, status or priority directories, or symlinks, and do not move a project
+when its status or priority changes. Number plan sections and never renumber
+them after another document or code comment cites them.
 
-Every plan lives in [`all/`](all/) and nothing ever moves out of it. The lists
-point into `all/`; a project changing phase is an edit to the lists, not a file
-move. A project is one file, `all/<name>.md`, until it genuinely outgrows one —
-several phases in flight, a design wanting its own space, a decision log worth
-keeping apart from the plan. Then it becomes a folder, `all/<name>/`, whose
-entry point is `README.md`. Promotion is one `git mv` inside `all/`, so none of
-this is decided up front, and it is the one move the rule above allows.
+Run `project list` to browse projects and `project check` to validate the
+tree. Both commands come from the Projector CLI:
 
-## Frontmatter
+```sh
+pipx install git+https://github.com/ninjudd/projector.git
+```
 
-Every plan carries YAML frontmatter with `status:` — on the file when it is a
-file, on `README.md` when it is a folder, where it is the status of the whole
-project. The keyword is one of:
+## Conventions this repository adds
 
-| Keyword | Meaning |
-|---|---|
-| `Draft` | Written, implementation not started |
-| `Active` | In progress |
-| `Blocked` | Waiting on a dependency or decision |
-| `Stalled` | Lost momentum, not formally dropped |
-| `Shipped` | Delivered |
-| `Superseded` | Replaced by another plan |
-| `Abandoned` | Dropped |
-| `Reference` | A standing document with no build lifecycle |
+Keep the `**Status:**` prose line under a plan's title. The frontmatter is the
+state of record; the line says why, and what is left.
 
-`Active`, `Blocked`, and `Shipped` claim the plan is executable; the other five
-claim nothing of the sort. Open questions in a plan carrying one of the five do
-not block its pull requests. The pull request that flips a plan into one of the
-three is the one making the readiness claim, and it answers for every question
-still open at that moment.
+Cite a plan by section using the project name and a `.md` suffix, for example
+`agent-orchestrator.md §5`, which names
+`docs/projects/agent-orchestrator/readme.md`. Code comments and other plans
+carry these citations, so renumbering a section silently breaks references
+that no compiler catches. Add new sections at the end rather than inserting
+them.
 
-The keyword is the state of record; the *why* stays prose in the body. A plan
-whose status frontmatter is stale is worse than one with no status at all.
+A project with no plan yet is still a project. Give it a directory and a short
+`readme.md` that records the idea and why it matters, rather than a line in a
+shared list.
 
-Every plan also carries `owner:` — the single person to ask about it. It names
-who answers questions on the plan and who decides whether it is still worth
-doing, which is not necessarily who writes the code. Write it as
-`first_name.last_name`.
-
-## Citing a plan
-
-Plans are cited by section — `agent-orchestrator.md §5` — including from code
-comments and from other plans. Renumbering a section silently breaks those
-references, so **add new sections at the end** rather than inserting them.
-
-## Keeping it current
-
-The lists and the status frontmatter ride the pull request that changes what
-they say. The pull request completing a plan sets `status: Shipped` and edits
-`now.md` in the same diff. Do not plan a separate close-out pull request.
+This repository has one person to ask about any plan, so plans carry no
+`owner:` field. Add one, as a GitHub login, if that changes.
 
 ## New findings become projects
 
@@ -70,7 +53,7 @@ request asked for.
 A defect the change itself introduced is the opposite case: it belongs in the
 same pass, because the pull request is what put it there.
 
-## Relationship to `docs/`
+## What does not go here
 
 Method and system documents stay in `docs/` and are cited from plans, not
 absorbed into them. They outlive the projects that produced them:

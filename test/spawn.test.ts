@@ -414,8 +414,9 @@ describe("spawnTeammate (§7)", () => {
     // Observed live: a writer parked at its engine's trust dialog, the 15s
     // registration poll lost the race against the human answering it, and the
     // teammate registered and started work immediately after the throw.
-    // later.md used to tell the operator to kill and respawn here, which
-    // would have destroyed a healthy teammate mid-task.
+    // The plan (now docs/projects/failed-spawn-cleanup) used to tell the
+    // operator to kill and respawn here, which would have destroyed a healthy
+    // teammate mid-task.
     initTeam(TEAM);
     writeFileSync(join(stubDir, "trip"),
       `#!/bin/sh\ncase "$1" in\n  create) mkdir -p "${sessions}/$2"; echo "$2" >> "${stubDir}/live.txt" ;;\n` +

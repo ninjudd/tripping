@@ -116,6 +116,6 @@ and `src/discord/` and are out of scope for v1. `npm run telegram` /
 - [`docs/trip-primitives.md`](docs/trip-primitives.md) — the trip guarantees
   this builds on, and the source facts behind each one.
 - [`docs/projects/`](docs/projects/) — the work itself.
-  [`agent-orchestrator.md`](docs/projects/all/agent-orchestrator.md) is the
+  [`agent-orchestrator`](docs/projects/agent-orchestrator/readme.md) is the
   design: the message model, status derivation, spawning, task custody,
   population limits, and the decisions behind them.
